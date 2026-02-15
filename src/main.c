@@ -1,21 +1,48 @@
 #include <stdio.h>
 #include <sys/ioctl.h>
 #include <unistd.h>
-#include "core/terminalui.h"
+#include <signal.h>
+
+static struct winsize windowSize;
+
+
+void handleTerminalWindowSizeChangeSignal(int signal);
+int getTerminalWindowSize(struct winsize *windowSize);
+int setTerminalWindowSize(struct winsize *windowSize);
+
 
 int main(void) {
-    struct winsize windowSize;
+    //register various signals to listen
+    signal(SIGWINCH, handleTerminalWindowSizeChangeSignal);
 
-    if(getTerminalWindowSize(&windowSize) == -1) return -1; 
+    //getting initial window size
+    if (getTerminalWindowSize(&windowSize) == -1) return -1;
 
-    printf("Initial window size\n");
-    printf("rows: %d, cols: %d, horizontal pixels: %dpx, vertical pixels: %dpx\n\n", windowSize.ws_row, windowSize.ws_col, windowSize.ws_xpixel, windowSize.ws_ypixel);
+    printf("Initial size: %d x %d px\n", windowSize.ws_xpixel, windowSize.ws_ypixel);
 
-    for(int i = 0; i < 15; i++) {
-        windowSize.ws_col -= 5;
-        if(setTerminalWindowSize(&windowSize) == -1) return -1;
-        printf("rows: %d, cols: %d, horizontal pixels: %dpx, vertical pixels: %dpx\n\n", windowSize.ws_row, windowSize.ws_col, windowSize.ws_xpixel, windowSize.ws_ypixel);
+    while(1) {
+        pause();
     }
 
+
+    return 0;
 }
+
+void handleTerminalWindowSizeChangeSignal(int signal) {
+    if (getTerminalWindowSize(&windowSize) == -1) {
+        puts("Error getting window size");
+    } else {
+        printf("size: %d x %d px\n", windowSize.ws_xpixel, windowSize.ws_ypixel);
+    }
+}
+
+int getTerminalWindowSize(struct winsize *windowSize) {
+    return ioctl(STDIN_FILENO, TIOCGWINSZ, windowSize);
+}
+
+int setTerminalWindowSize(struct winsize *windowSize) {
+    puts("Terminal resizing detected");
+    return ioctl(STDIN_FILENO, TIOCSWINSZ, windowSize);
+}
+
 
