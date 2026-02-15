@@ -1,1 +1,1 @@
-void create_shell();
+void create_shell(void);
