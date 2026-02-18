@@ -70,8 +70,16 @@ int fork_and_exec_shell(void) {
     }
     else if (child_process_pid == 0) {
         // child process, creation of the shell
-        return 0;
+        // call setsid() to start a new session, of which the child is the session leader
+        // this step also causes the child to lose its controlling terminal
 
+
+        // use dup() to duplicate the file descriptor for the slave device on
+        // STDIN STDOUT and STDERR
+        //
+        // call exec() to start the terminal oriented program that is to be connected
+        // to the pseudoterminal slave
+        return 0;
     } else {
         // parent process, doing cleanup
     }
