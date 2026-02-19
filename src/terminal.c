@@ -70,9 +70,6 @@ int fork_and_exec_shell(int master_file_descriptor, int slave_file_descriptor) {
     }
 }
 
-/* This function tries to get the default shell by the environment variables
- * if not shell is returned then we use /bin/sh, in order to have linux compatibility
- */
 char * get_default_shell(void) {
     char *shell = getenv("SHELL");
     
