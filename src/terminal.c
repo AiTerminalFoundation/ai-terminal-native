@@ -58,7 +58,6 @@ int fork_and_exec_shell(int master_file_descriptor, int slave_file_descriptor) {
 
         // call exec() to start the terminal oriented program that is to be connected
         // to the pseudoterminal slave
-        puts("Terminal resizing detected");
         char *default_shell = get_default_shell();
         execlp(default_shell, default_shell, NULL);
 
