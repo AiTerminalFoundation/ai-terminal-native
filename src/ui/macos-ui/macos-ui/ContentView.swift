@@ -8,17 +8,26 @@
 import SwiftUI
 
 struct ContentView: View {
+
+    @StateObject private var terminal = TerminalSession()
+    @State private var input = ""
+
     var body: some View {
         VStack {
-            Image(systemName: "globe")
-                .imageScale(.large)
-                .foregroundStyle(.tint)
-            Text("Hello, world!")
-        }
-        .padding()
-    }
-}
+            ScrollView {
+                Text(terminal.output)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .padding()
+            }
 
-#Preview {
-    ContentView()
+            HStack {
+                TextField("Insert command", text: $input)
+                    .textFieldStyle(.roundedBorder)
+            }
+            .padding()
+        }
+        .onAppear {
+            terminal.start()
+        }
+    }
 }

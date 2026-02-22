@@ -6,8 +6,15 @@
 	objectVersion = 77;
 	objects = {
 
+/* Begin PBXBuildFile section */
+		FBB7AE212F4B3E7E00354FFC /* terminal.c in Sources */ = {isa = PBXBuildFile; fileRef = FBB7AE1F2F4B3E7E00354FFC /* terminal.c */; };
+/* End PBXBuildFile section */
+
 /* Begin PBXFileReference section */
 		FBB7AE002F4B339200354FFC /* macos-ui.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = "macos-ui.app"; sourceTree = BUILT_PRODUCTS_DIR; };
+		FBB7AE1D2F4B3E7E00354FFC /* main.c */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.c; path = main.c; sourceTree = "<group>"; };
+		FBB7AE1E2F4B3E7E00354FFC /* terminal.h */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.h; path = terminal.h; sourceTree = "<group>"; };
+		FBB7AE1F2F4B3E7E00354FFC /* terminal.c */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.c; path = terminal.c; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXFileSystemSynchronizedRootGroup section */
@@ -34,6 +41,7 @@
 			children = (
 				FBB7AE022F4B339200354FFC /* macos-ui */,
 				FBB7AE012F4B339200354FFC /* Products */,
+				FBB7AE202F4B3E7E00354FFC /* core */,
 			);
 			sourceTree = "<group>";
 		};
@@ -44,6 +52,17 @@
 			);
 			name = Products;
 			sourceTree = "<group>";
+		};
+		FBB7AE202F4B3E7E00354FFC /* core */ = {
+			isa = PBXGroup;
+			children = (
+				FBB7AE1D2F4B3E7E00354FFC /* main.c */,
+				FBB7AE1E2F4B3E7E00354FFC /* terminal.h */,
+				FBB7AE1F2F4B3E7E00354FFC /* terminal.c */,
+			);
+			name = core;
+			path = "/Users/micheleverriello/code/ai-terminal-native/src/core";
+			sourceTree = "<absolute>";
 		};
 /* End PBXGroup section */
 
@@ -119,6 +138,7 @@
 			isa = PBXSourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
+				FBB7AE212F4B3E7E00354FFC /* terminal.c in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -258,7 +278,9 @@
 				ENABLE_HARDENED_RUNTIME = YES;
 				ENABLE_PREVIEWS = YES;
 				ENABLE_USER_SELECTED_FILES = readonly;
+				GCC_INPUT_FILETYPE = automatic;
 				GENERATE_INFOPLIST_FILE = YES;
+				HEADER_SEARCH_PATHS = "$(SRCROOT)/../../core/**";
 				INFOPLIST_KEY_NSHumanReadableCopyright = "";
 				LD_RUNPATH_SEARCH_PATHS = (
 					"$(inherited)",
@@ -272,6 +294,7 @@
 				SWIFT_APPROACHABLE_CONCURRENCY = YES;
 				SWIFT_DEFAULT_ACTOR_ISOLATION = MainActor;
 				SWIFT_EMIT_LOC_STRINGS = YES;
+				SWIFT_OBJC_BRIDGING_HEADER = "$(SRCROOT)/macos-ui/macos-ui-Bridging-Header.h";
 				SWIFT_UPCOMING_FEATURE_MEMBER_IMPORT_VISIBILITY = YES;
 				SWIFT_VERSION = 5.0;
 			};
@@ -290,7 +313,9 @@
 				ENABLE_HARDENED_RUNTIME = YES;
 				ENABLE_PREVIEWS = YES;
 				ENABLE_USER_SELECTED_FILES = readonly;
+				GCC_INPUT_FILETYPE = automatic;
 				GENERATE_INFOPLIST_FILE = YES;
+				HEADER_SEARCH_PATHS = "$(SRCROOT)/../../core/**";
 				INFOPLIST_KEY_NSHumanReadableCopyright = "";
 				LD_RUNPATH_SEARCH_PATHS = (
 					"$(inherited)",
@@ -304,6 +329,7 @@
 				SWIFT_APPROACHABLE_CONCURRENCY = YES;
 				SWIFT_DEFAULT_ACTOR_ISOLATION = MainActor;
 				SWIFT_EMIT_LOC_STRINGS = YES;
+				SWIFT_OBJC_BRIDGING_HEADER = "$(SRCROOT)/macos-ui/macos-ui-Bridging-Header.h";
 				SWIFT_UPCOMING_FEATURE_MEMBER_IMPORT_VISIBILITY = YES;
 				SWIFT_VERSION = 5.0;
 			};
