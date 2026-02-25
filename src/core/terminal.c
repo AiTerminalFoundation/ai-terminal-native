@@ -22,7 +22,7 @@ int create_pseudoterminal(int *master_file_descriptor, int *slave_file_descripto
 int fork_and_exec_shell(int master_file_descriptor, int slave_file_descriptor);
 char * get_default_shell(void);
 ssize_t send_input(char *command, int master_file_descriptor, size_t command_n_bytes);
-char * read_loop(int master_file_descriptor, void (*on_output(const char *buffer, ssize_t n_bytes_read);
+void read_loop(int master_file_descriptor, void (*on_output)(const char *buffer, ssize_t n_bytes_read));
 
 
 /*
@@ -95,7 +95,7 @@ ssize_t send_input(char *command, int master_file_descriptor, size_t command_n_b
 /*
  * Reading the STDOUT connected to the slave connected to the given master
  */
-char * read_loop(int master_file_descriptor, void (*on_output(const char *buffer, ssize_t n_bytes_read) {
+void read_loop(int master_file_descriptor, void (*on_output)(const char *buffer, ssize_t n_bytes_read)) {
     char buffer[BUFFER_SIZE];
 
     struct pollfd poll_file_descriptor = { .fd = master_file_descriptor, .events = POLLIN };
@@ -110,12 +110,12 @@ char * read_loop(int master_file_descriptor, void (*on_output(const char *buffer
     while(poll(&poll_file_descriptor, 1, -1) > 0) {
         // we need to use bitwise AND with POLLIN, becasue the might be also the POLLHUP events (that means connection close) with some output
         // if we use == we will lose this edge case
-        if(poll_file_descriptor.revents & POLLIN > 0) {
+        if((poll_file_descriptor.revents & POLLIN) > 0) {
             ssize_t n_bytes_read = read(master_file_descriptor, buffer, BUFFER_SIZE);
             
             // some error, as we expect output here given that the bitwise operation is true
             // TODO: add a counter for the error to have some sort of reliability before exiting the loop
-            if(n <= 0) break;
+            if(n_bytes_read <= 0) break;
 
             on_output(buffer, n_bytes_read);
         }
