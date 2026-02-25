@@ -11,14 +11,17 @@
 #include <stdlib.h>
 #include <unistd.h>
 #include <sys/ioctl.h>
+#include <poll.h>
 
 
 int create_pseudoterminal(int *master_file_descriptor, int *slave_file_descriptor);
 int fork_and_exec_shell(int master_file_descriptor, int slave_file_descriptor);
 char * get_default_shell(void);
+int execute_command(char *command, int master_file_descriptor);
+int fork_shell(int slave_file_descriptor);
 
-
-/* Create a new pseudoterminal session, this function is just a wrapper of the openpty() function
+/*
+ * Create a new pseudoterminal session, this function is just a wrapper of the openpty() function
  * the openpty() function returns the file descriptors of the master and slave pseudoterminals
  * this function just exposes these to the UI Layer 
  */
@@ -26,7 +29,8 @@ int create_pseudoterminal(int *master_file_descriptor, int *slave_file_descripto
     return openpty(master_file_descriptor, slave_file_descriptor, NULL, NULL, NULL);
 }
 
-/* we need fork and exec in order to make our application alive
+/*
+ * @e need fork and exec in order to make our application alive
  * if we don't fork(), so we create a new child process that is the exact copy of this one,
  * then the exec() will replace the current process, and the app would crash
  */
@@ -71,10 +75,21 @@ int fork_and_exec_shell(int master_file_descriptor, int slave_file_descriptor) {
 
 char * get_default_shell(void) {
     char *shell = getenv("SHELL");
-    
-    if (shell == NULL) {
-        shell = "/bin/sh";
-    }
 
-    return shell;
+    return shell ? shell : "/bin/sh";
+}
+
+/*
+ * Send input to the master_fd that sends it to the slave, and the slave shell elaborates
+ * and sends to the STDOUT of the slave, that will be read by the master, and then by the user app
+ */
+ssize_t send_input(char *command, int master_file_descriptor, size_t command_n_bytes) {
+    return write(master_file_descriptor, command, command_n_bytes);
+}
+
+/*
+ * Reading the STDOUT connected to the slave connected to the given master
+ */
+char * read_loop(int master_file_descriptor) {
+    read
 }
