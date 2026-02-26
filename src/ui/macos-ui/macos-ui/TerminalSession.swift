@@ -11,7 +11,7 @@ internal import Combine
 
 final class TerminalSession: ObservableObject {
 
-    @Published var output: String = "Starting..."
+    @Published var output: String = ""
 
     private var master: Int32 = 0
     private var slave: Int32 = 0
