@@ -10,8 +10,11 @@ import SwiftUI
 @main
 struct macos_uiApp: App {
     var body: some Scene {
+        
+        
         WindowGroup {
             ContentView()
+                .environment(\.font, .custom("JetBrainsMono-Regular", size: 12))
         }
     }
 }

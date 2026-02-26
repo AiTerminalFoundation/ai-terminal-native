@@ -22,7 +22,7 @@ struct ContentView: View {
 
             HStack {
                 TextField("Insert command", text: $input)
-                    .textFieldStyle(.roundedBorder)
+                    .textFieldStyle(.plain)
             }
             .padding()
         }
