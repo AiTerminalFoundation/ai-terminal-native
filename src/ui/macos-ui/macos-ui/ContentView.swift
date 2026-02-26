@@ -23,6 +23,10 @@ struct ContentView: View {
             HStack {
                 TextField("Insert command", text: $input)
                     .textFieldStyle(.plain)
+                    .onSubmit {
+                        terminal.send_input_string(input: input)
+                        self.input = ""
+                    }
             }
             .padding()
         }

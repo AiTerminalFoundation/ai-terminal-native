@@ -1,4 +1,3 @@
-
 /* Guarantee that openpty() works on both MacOS and Linux */
 #ifdef __APPLE__
   #include <util.h>
@@ -22,7 +21,7 @@ int create_pseudoterminal(int *master_file_descriptor, int *slave_file_descripto
 int fork_and_exec_shell(int master_file_descriptor, int slave_file_descriptor);
 char * get_default_shell(void);
 ssize_t send_input(char *command, int master_file_descriptor, size_t command_n_bytes);
-void read_loop(int master_file_descriptor, void (*on_output)(const char *buffer, ssize_t n_bytes_read));
+void read_loop(int master_file_descriptor, void (*on_output)(const char *buffer, ssize_t n_bytes_read, void *context), void *context);
 
 
 /*
@@ -95,7 +94,7 @@ ssize_t send_input(char *command, int master_file_descriptor, size_t command_n_b
 /*
  * Reading the STDOUT connected to the slave connected to the given master
  */
-void read_loop(int master_file_descriptor, void (*on_output)(const char *buffer, ssize_t n_bytes_read)) {
+void read_loop(int master_file_descriptor, void (*on_output)(const char *buffer, ssize_t n_bytes_read, void *context), void *context) {
     char buffer[BUFFER_SIZE];
 
     struct pollfd poll_file_descriptor = { .fd = master_file_descriptor, .events = POLLIN };
@@ -117,7 +116,8 @@ void read_loop(int master_file_descriptor, void (*on_output)(const char *buffer,
             // TODO: add a counter for the error to have some sort of reliability before exiting the loop
             if(n_bytes_read <= 0) break;
 
-            on_output(buffer, n_bytes_read);
+            on_output(buffer, n_bytes_read, context);
         }
     }
 }
+
