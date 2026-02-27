@@ -15,7 +15,7 @@ struct ContentView: View {
                         .frame(maxWidth: .infinity)
                         .fixedSize(horizontal: false, vertical: true)
 
-                        TextField("", text: $input)
+                    TextField(terminal.currentPrompt.isEmpty ? "Type here..." : terminal.currentPrompt, text: $input)
                             .textFieldStyle(.plain)
                             .onSubmit {
                                 terminal.send_input_string(input: input + "\n")

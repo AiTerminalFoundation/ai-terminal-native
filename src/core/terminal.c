@@ -67,9 +67,9 @@ int fork_and_exec_shell(int master_file_descriptor, int slave_file_descriptor) {
         // to the pseudoterminal slave
         const char *default_shell = get_default_shell();
         
-        setenv("PS1", "__PROMPT__:\\w> ", 1);       
+        setenv("PS1", "__PROMPT__:$(pwd)> ", 1);       
 
-        execlp(default_shell, default_shell, , NULL);
+        execlp(default_shell, default_shell, NULL);
 
         return 0;
     } else {

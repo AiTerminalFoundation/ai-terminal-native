@@ -11,8 +11,16 @@ internal import Combine
 
 final class TerminalSession: ObservableObject {
 
+    // Matches the sentinel prompt format: __PROMPT__:/some/path>
+    // - "__PROMPT__:" is a unique literal prefix, unlikely to appear in normal terminal output
+    // - "([^>]+)" captures one or more characters that are not ">", which is the current folder path
+    // - ">" is the closing delimiter of the sentinel
+    // Capture group 1 contains the folder path (e.g. /Users/you/project)
+    private static let promptPattern = #"__PROMPT__:([^>]+)>"#
+    private static let ansiPattern = #"\x1B(\[[0-9;?]*[A-Za-z]|\][^\x07]*\x07|[()][AB])"#
+
     @Published var output: String = ""
-    @Published var currentFolder: String = ""
+    @Published var currentPrompt: String = ""
     private var master_fd: Int32 = 0
     private var slave_fd: Int32 = 0
     
@@ -27,18 +35,25 @@ final class TerminalSession: ObservableObject {
             
             if let chunk = String(data: data, encoding: .utf8) ?? String(data: data, encoding: .ascii) {
                 DispatchQueue.main.async {
-                    instance.output += chunk
+                    let cleaned = chunk.replacingOccurrences(of: ansiPattern, with: "", options: .regularExpression)
+                    instance.output += cleaned
                     
-                    // getting index of last \n and removing the next char sequence
-                    if let range = instance.output.range(of: "\n", options: .backwards) {
-                        // extract the next char sequence
-                        // the next char sequence will be the current folder
-                        let nextCharSequence = instance.output[instance.output.index(after: range.lowerBound)...]
-                        instance.currentFolder = String(nextCharSequence)
-                        
-                        instance.output.removeSubrange(range.lowerBound..<instance.output.endIndex)
+                    // Search for the last occurrence of the sentinel prompt using regex.
+                    // We use the last match in case multiple prompts accumulated in the buffer.
+                    if let regex = try? NSRegularExpression(pattern: TerminalSession.promptPattern),
+                       let match = regex.matches(
+                           in: instance.output,
+                           range: NSRange(instance.output.startIndex..., in: instance.output)
+                       ).last,
+                       let folderRange = Range(match.range(at: 1), in: instance.output),
+                       let fullMatchRange = Range(match.range(at: 0), in: instance.output) {
+
+                        // Group 1 contains the expanded path, e.g. /Users/you/project
+                        instance.currentPrompt = String(instance.output[folderRange])
+
+                        // Strip the sentinel and everything after it from the visible output
+                        instance.output.removeSubrange(fullMatchRange.lowerBound..<instance.output.endIndex)
                     }
-                    
                 }
             }
         }
@@ -48,14 +63,11 @@ final class TerminalSession: ObservableObject {
         let result = create_pseudoterminal(&master_fd, &slave_fd)
         
         if result == 0 {
-            DispatchQueue.main.async {
-                self.output += "PTY OK: master_fd: \(self.master_fd), slave_fd: \(self.slave_fd)\n"
-            }
 
             let forkResult = fork_and_exec_shell(master_fd, slave_fd)
             
-            DispatchQueue.main.async {
-                self.output += "Fork result: \(forkResult)\n"
+            if forkResult < 0 {
+                fatalError("Couldn't fork and execute shell")
             }
             
             // converts self into a raw void* pointer so it can be passed to C.
