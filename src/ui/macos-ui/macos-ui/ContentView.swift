@@ -1,37 +1,28 @@
-//
-//  ContentView.swift
-//  macos-ui
-//
-//  Created by Michele Verriello on 22/02/26.
-//
-
 import SwiftUI
+internal import Combine
 
 struct ContentView: View {
-
     @StateObject private var terminal = TerminalSession()
     @State private var input = ""
 
     var body: some View {
-        VStack {
+        ScrollViewReader { proxy in
             ScrollView {
-                Text(terminal.output)
-                    .frame(maxWidth: .infinity, alignment: .leading)
-                    .padding()
-            }
+                VStack() {
+                    TextEditor(text: .constant(terminal.output))
+                        .scrollContentBackground(.hidden)
+                        .scrollDisabled(true)          // let the outer ScrollView handle it
+                        .frame(maxWidth: .infinity)
+                        .fixedSize(horizontal: false, vertical: true)
 
-            HStack {
-                TextField("Insert command", text: $input)
-                    .textFieldStyle(.plain)
-                    .onSubmit {
-                        terminal.send_input_string(input: input)
-                        self.input = ""
-                    }
+                        TextField("", text: $input)
+                            .textFieldStyle(.plain)
+                            .onSubmit {
+                                terminal.send_input_string(input: input + "\n")
+                                input = ""
+                            }
+                }
             }
-            .padding()
-        }
-        .onAppear {
-            terminal.start()
-        }
+        }.onAppear { terminal.start() }
     }
 }
