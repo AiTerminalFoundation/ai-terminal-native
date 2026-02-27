@@ -43,8 +43,7 @@ int fork_and_exec_shell(int master_file_descriptor, int slave_file_descriptor) {
 
     if (child_process_pid == -1) { // fork() is failed
         return -1;
-    }
-    else if (child_process_pid == 0) {
+    } else if (child_process_pid == 0) {
         // child process, creation of the shell
         // call setsid() to start a new session, of which the child is the session leader
         // this step also causes the child to lose its controlling terminal
@@ -67,10 +66,15 @@ int fork_and_exec_shell(int master_file_descriptor, int slave_file_descriptor) {
         // to the pseudoterminal slave
         const char *default_shell = get_default_shell();
         
-        setenv("PS1", "__PROMPT__:$(pwd)> ", 1);       
+        // \x01 and \x02 are SOH/STX control characters, invisible and never appear in normal output
+        setenv("PS1", "\x01__PROMPT__:$(whoami)@$(pwd)\x02 ", 1);
+        setenv("PROMPT", "\x01__PROMPT__:$(whoami)@$(pwd)\x02 ", 1);
+        
+        unsetenv("PS1");
 
-        execlp(default_shell, default_shell, NULL);
-
+        //-f doesn't load startup files, useful for now to manage prompt patterns
+        execlp(default_shell, default_shell, "-f", "-o", "promptsubst", NULL);
+        
         return 0;
     } else {
         // parent process, it doesn't need the slave

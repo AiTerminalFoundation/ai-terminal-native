@@ -11,12 +11,14 @@ internal import Combine
 
 final class TerminalSession: ObservableObject {
 
-    // Matches the sentinel prompt format: __PROMPT__:/some/path>
+    // Matches \x01__PROMPT__:user@/path\x02
     // - "__PROMPT__:" is a unique literal prefix, unlikely to appear in normal terminal output
     // - "([^>]+)" captures one or more characters that are not ">", which is the current folder path
     // - ">" is the closing delimiter of the sentinel
     // Capture group 1 contains the folder path (e.g. /Users/you/project)
-    private static let promptPattern = #"__PROMPT__:([^>]+)>"#
+    // \x01 (SOH) and \x02 (STX) are control characters used as unique delimiters
+    // that can never appear in normal shell output, preventing false matches
+    private static let promptPattern = #"\x01__PROMPT__:([^\x02]+)\x02"#
     private static let ansiPattern = #"\x1B(\[[0-9;?]*[A-Za-z]|\][^\x07]*\x07|[()][AB])"#
 
     @Published var output: String = ""
@@ -35,7 +37,9 @@ final class TerminalSession: ObservableObject {
             
             if let chunk = String(data: data, encoding: .utf8) ?? String(data: data, encoding: .ascii) {
                 DispatchQueue.main.async {
-                    let cleaned = chunk.replacingOccurrences(of: ansiPattern, with: "", options: .regularExpression)
+                    let cleaned = chunk
+                        .replacingOccurrences(of: ansiPattern, with: "", options: .regularExpression)
+                    
                     instance.output += cleaned
                     
                     // Search for the last occurrence of the sentinel prompt using regex.
@@ -69,13 +73,15 @@ final class TerminalSession: ObservableObject {
             if forkResult < 0 {
                 fatalError("Couldn't fork and execute shell")
             }
-            
+                        
             // converts self into a raw void* pointer so it can be passed to C.
             // passUnretained doesn't increment the reference count, given that C doesn't own it
             let context = Unmanaged.passUnretained(self).toOpaque()
             DispatchQueue.global(qos: .userInitiated).async { [master = self.master_fd] in
                 read_loop(master, TerminalSession.outputCallback, context)
             }
+            
+            
         } else {
             DispatchQueue.main.async {
                 self.output = "PTY FAILED"
