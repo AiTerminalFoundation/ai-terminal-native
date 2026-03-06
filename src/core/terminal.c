@@ -27,8 +27,10 @@ void read_loop(int master_file_descriptor, void (*on_output)(const char *buffer,
  * Create a new pseudoterminal session, this function is just a wrapper of the openpty() function
  * the openpty() function returns the file descriptors of the master and slave pseudoterminals
  * this function just exposes these to the UI Layer 
+ * We will use the pseudoterminal_session_id to create a file that will contains the logs of each terminal session
  */
-int create_pseudoterminal(int *master_file_descriptor, int *slave_file_descriptor) {
+int create_pseudoterminal(int *master_file_descriptor, int *slave_file_descriptor, int *pseudoterminal_session_id) {
+
     return openpty(master_file_descriptor, slave_file_descriptor, NULL, NULL, NULL);
 }
 
