@@ -8,6 +8,7 @@
 
 /* Begin PBXBuildFile section */
 		FBB7AE212F4B3E7E00354FFC /* terminal.c in Sources */ = {isa = PBXBuildFile; fileRef = FBB7AE1F2F4B3E7E00354FFC /* terminal.c */; };
+		FBC163A52F5DEC12004FDC91 /* utils.c in Sources */ = {isa = PBXBuildFile; fileRef = FBC163A42F5DEC12004FDC91 /* utils.c */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXFileReference section */
@@ -15,11 +16,26 @@
 		FBB7AE1D2F4B3E7E00354FFC /* main.c */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.c; path = main.c; sourceTree = "<group>"; };
 		FBB7AE1E2F4B3E7E00354FFC /* terminal.h */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.h; path = terminal.h; sourceTree = "<group>"; };
 		FBB7AE1F2F4B3E7E00354FFC /* terminal.c */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.c; path = terminal.c; sourceTree = "<group>"; };
+		FBC163A32F5DEC12004FDC91 /* utils.h */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.h; path = utils.h; sourceTree = "<group>"; };
+		FBC163A42F5DEC12004FDC91 /* utils.c */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.c; path = utils.c; sourceTree = "<group>"; };
 /* End PBXFileReference section */
+
+/* Begin PBXFileSystemSynchronizedBuildFileExceptionSet section */
+		FBB7AE862F50B3C700354FFC /* Exceptions for "macos-ui" folder in "macos-ui" target */ = {
+			isa = PBXFileSystemSynchronizedBuildFileExceptionSet;
+			membershipExceptions = (
+				Info.plist,
+			);
+			target = FBB7ADFF2F4B339200354FFC /* macos-ui */;
+		};
+/* End PBXFileSystemSynchronizedBuildFileExceptionSet section */
 
 /* Begin PBXFileSystemSynchronizedRootGroup section */
 		FBB7AE022F4B339200354FFC /* macos-ui */ = {
 			isa = PBXFileSystemSynchronizedRootGroup;
+			exceptions = (
+				FBB7AE862F50B3C700354FFC /* Exceptions for "macos-ui" folder in "macos-ui" target */,
+			);
 			path = "macos-ui";
 			sourceTree = "<group>";
 		};
@@ -59,6 +75,8 @@
 				FBB7AE1D2F4B3E7E00354FFC /* main.c */,
 				FBB7AE1E2F4B3E7E00354FFC /* terminal.h */,
 				FBB7AE1F2F4B3E7E00354FFC /* terminal.c */,
+				FBC163A32F5DEC12004FDC91 /* utils.h */,
+				FBC163A42F5DEC12004FDC91 /* utils.c */,
 			);
 			name = core;
 			path = "/Users/micheleverriello/code/ai-terminal-native/src/core";
@@ -138,6 +156,7 @@
 			isa = PBXSourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
+				FBC163A52F5DEC12004FDC91 /* utils.c in Sources */,
 				FBB7AE212F4B3E7E00354FFC /* terminal.c in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
@@ -270,17 +289,18 @@
 			buildSettings = {
 				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
 				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
+				"CODE_SIGN_IDENTITY[sdk=macosx*]" = "Apple Development";
 				CODE_SIGN_STYLE = Automatic;
 				COMBINE_HIDPI_IMAGES = YES;
 				CURRENT_PROJECT_VERSION = 1;
 				DEVELOPMENT_TEAM = 4VH6NYWG45;
-				ENABLE_APP_SANDBOX = YES;
+				ENABLE_APP_SANDBOX = NO;
 				ENABLE_HARDENED_RUNTIME = YES;
 				ENABLE_PREVIEWS = YES;
-				ENABLE_USER_SELECTED_FILES = readonly;
 				GCC_INPUT_FILETYPE = automatic;
 				GENERATE_INFOPLIST_FILE = YES;
 				HEADER_SEARCH_PATHS = "$(SRCROOT)/../../core/**";
+				INFOPLIST_FILE = "macos-ui/Info.plist";
 				INFOPLIST_KEY_NSHumanReadableCopyright = "";
 				LD_RUNPATH_SEARCH_PATHS = (
 					"$(inherited)",
@@ -309,13 +329,13 @@
 				COMBINE_HIDPI_IMAGES = YES;
 				CURRENT_PROJECT_VERSION = 1;
 				DEVELOPMENT_TEAM = 4VH6NYWG45;
-				ENABLE_APP_SANDBOX = YES;
+				ENABLE_APP_SANDBOX = NO;
 				ENABLE_HARDENED_RUNTIME = YES;
 				ENABLE_PREVIEWS = YES;
-				ENABLE_USER_SELECTED_FILES = readonly;
 				GCC_INPUT_FILETYPE = automatic;
 				GENERATE_INFOPLIST_FILE = YES;
 				HEADER_SEARCH_PATHS = "$(SRCROOT)/../../core/**";
+				INFOPLIST_FILE = "macos-ui/Info.plist";
 				INFOPLIST_KEY_NSHumanReadableCopyright = "";
 				LD_RUNPATH_SEARCH_PATHS = (
 					"$(inherited)",

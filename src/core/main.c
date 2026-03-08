@@ -1,4 +1,5 @@
 #include "terminal.h"
+#include "utils.h"
 #include <stdio.h>
 #include <unistd.h>
 #include <signal.h>
@@ -18,7 +19,6 @@ int main(void) {
 
     //getting initial window size
     if (get_terminal_window_size(&window_size) == -1) return -1;
-    printf("Initial size: %d x %d px\n", window_size.ws_xpixel, window_size.ws_ypixel);
 
     while (1) {
         pause();
