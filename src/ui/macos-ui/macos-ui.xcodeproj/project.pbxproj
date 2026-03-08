@@ -8,6 +8,7 @@
 
 /* Begin PBXBuildFile section */
 		FBB7AE212F4B3E7E00354FFC /* terminal.c in Sources */ = {isa = PBXBuildFile; fileRef = FBB7AE1F2F4B3E7E00354FFC /* terminal.c */; };
+		FBC163A52F5DEC12004FDC91 /* utils.c in Sources */ = {isa = PBXBuildFile; fileRef = FBC163A42F5DEC12004FDC91 /* utils.c */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXFileReference section */
@@ -15,6 +16,8 @@
 		FBB7AE1D2F4B3E7E00354FFC /* main.c */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.c; path = main.c; sourceTree = "<group>"; };
 		FBB7AE1E2F4B3E7E00354FFC /* terminal.h */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.h; path = terminal.h; sourceTree = "<group>"; };
 		FBB7AE1F2F4B3E7E00354FFC /* terminal.c */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.c; path = terminal.c; sourceTree = "<group>"; };
+		FBC163A32F5DEC12004FDC91 /* utils.h */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.h; path = utils.h; sourceTree = "<group>"; };
+		FBC163A42F5DEC12004FDC91 /* utils.c */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.c; path = utils.c; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXFileSystemSynchronizedBuildFileExceptionSet section */
@@ -72,6 +75,8 @@
 				FBB7AE1D2F4B3E7E00354FFC /* main.c */,
 				FBB7AE1E2F4B3E7E00354FFC /* terminal.h */,
 				FBB7AE1F2F4B3E7E00354FFC /* terminal.c */,
+				FBC163A32F5DEC12004FDC91 /* utils.h */,
+				FBC163A42F5DEC12004FDC91 /* utils.c */,
 			);
 			name = core;
 			path = "/Users/micheleverriello/code/ai-terminal-native/src/core";
@@ -151,6 +156,7 @@
 			isa = PBXSourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
+				FBC163A52F5DEC12004FDC91 /* utils.c in Sources */,
 				FBB7AE212F4B3E7E00354FFC /* terminal.c in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;

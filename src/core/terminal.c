@@ -7,6 +7,7 @@
 
 
 #include "terminal.h"
+#include "utils.h"
 #include <stdlib.h>
 #include <unistd.h>
 #include <sys/ioctl.h>
@@ -17,7 +18,7 @@
 #define BUFFER_SIZE 4096
 
 
-int create_pseudoterminal(int *master_file_descriptor, int *slave_file_descriptor);
+int create_pseudoterminal(int *master_file_descriptor, int *slave_file_descriptor, char **session_id);
 int fork_and_exec_shell(int master_file_descriptor, int slave_file_descriptor);
 const char * get_default_shell(void);
 ssize_t send_input(char *command, int master_file_descriptor, size_t command_n_bytes);
@@ -29,8 +30,8 @@ void read_loop(int master_file_descriptor, void (*on_output)(const char *buffer,
  * this function just exposes these to the UI Layer 
  * We will use the pseudoterminal_session_id to create a file that will contains the logs of each terminal session
  */
-int create_pseudoterminal(int *master_file_descriptor, int *slave_file_descriptor, int *pseudoterminal_session_id) {
-
+int create_pseudoterminal(int *master_file_descriptor, int *slave_file_descriptor, char **session_id) {
+    *session_id = generate_string_uuid_v7();
     return openpty(master_file_descriptor, slave_file_descriptor, NULL, NULL, NULL);
 }
 

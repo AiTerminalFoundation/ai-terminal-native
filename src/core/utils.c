@@ -4,25 +4,20 @@
 #include <stdio.h>
 #include <fcntl.h>
 #include <unistd.h>
-
-
-typedef struct {
-    uint64_t upper; // timestamp and version
-    uint64_t lower; // variant and random
-} uuid_v7;
+#include "utils.h"
 
 
 uuid_v7 generate_uuid_v7(void);
-uint64_t generate_random_value_64_bits();
-char * uuid_v7_to_string(uuid_v7 uuid_v7);
+uint64_t generate_random_value_64_bits(void);
+char * generates_string_uuid_v7(void);
 
 /* unsafe and unpredictable as some things are left to the compiler (padding, low-high disposition of the bits)
 struct {
     uint64_t unix_timestamp_ms : 48;
-    uint64_t version: 4;
+    uint64_t version: 4; 
     uint64_t microseconds_fraction: 12;
     uint64_t variant: 2;
-    uint64_t random_bits: 62;
+    uint64_t random_bits: 62; 
 } uuid_v7;
 */
 
@@ -58,14 +53,25 @@ uuid_v7 generate_uuid_v7(void) {
 }
 
 
-char * uuid_v7_to_string(const uuid_v7 uuid_v7) {
+char * generate_string_uuid_v7(void) {
+    char *uuid_str = malloc(37); // 32 bytes for the values, 4 dashes, 1 null terminator
+                            
+    uuid_v7 uuid_v7 = generate_uuid_v7();
     
+    uint32_t ts_first_part = (uint32_t)(uuid_v7.upper >> 32);
+    uint16_t ts_second_part = (uint16_t)((uuid_v7.upper >> 16) & 0xFFFF);
+    uint16_t ver_and_micros = (uint16_t)(uuid_v7.upper & 0xFFFF);
+    uint16_t variant_and_rand = (uint16_t)(uuid_v7.lower >> 48);
+    uint64_t rand = uuid_v7.lower & 0xFFFFFFFFFFFF;
 
-    return "";
+
+    // writing formatted string
+    snprintf(uuid_str, 37, "%08x-%04x-%04x-%04x-%12llx", ts_first_part, ts_second_part, ver_and_micros, variant_and_rand, rand);
+    return uuid_str;
 }
 
 
-uint64_t generate_random_value_64_bits() {
+uint64_t generate_random_value_64_bits(void) {
     uint64_t value;
 
     int urandom_file_descriptor = open("/dev/urandom", O_RDONLY);
@@ -73,11 +79,4 @@ uint64_t generate_random_value_64_bits() {
     close(urandom_file_descriptor);
 
     return value;
-}
-
-
-int main(void) {
-    
-    generate_uuid_v7();
-    return 0;
 }

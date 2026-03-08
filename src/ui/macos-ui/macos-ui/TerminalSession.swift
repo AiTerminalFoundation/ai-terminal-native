@@ -25,6 +25,7 @@ final class TerminalSession: ObservableObject {
     @Published var currentPrompt: String = ""
     private var master_fd: Int32 = 0
     private var slave_fd: Int32 = 0
+    private var session_id: UnsafeMutablePointer<CChar>? = nil
     
     private static let outputCallback: @convention(c) (UnsafePointer<CChar>?, Int, UnsafeMutableRawPointer?) -> Void = { buffer, nBytes, context in
                 
@@ -64,7 +65,14 @@ final class TerminalSession: ObservableObject {
     }
 
     func start() {
-        let result = create_pseudoterminal(&master_fd, &slave_fd)
+        let result = create_pseudoterminal(&master_fd, &slave_fd, &session_id)
+        
+        // convert to Swift String
+        if let session_id {
+            let id = String(cString: session_id)
+            free(session_id)  // free the malloc'd C string
+        }
+
         
         if result == 0 {
 
