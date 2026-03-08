@@ -34,7 +34,14 @@ struct ContentView: View {
                             }
                             .onKeyPress(.tab) {
                                 terminal.send_input_string(input: input + "\t")
-                                input = ""
+                                return .handled
+                            }
+                            .onKeyPress(.upArrow) {
+                                terminal.send_input_string(input: "\u{1B}[A")
+                                return .handled
+                            }
+                            .onKeyPress(.downArrow) {
+                                terminal.send_input_string(input : "\u{1B}[B")
                                 return .handled
                             }
                     }
