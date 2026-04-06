@@ -14,15 +14,16 @@
 #include <poll.h>
 #include <sys/types.h>
 #include <sys/uio.h>
+#include <string.h>
 
 #define BUFFER_SIZE 4096
 
 
 int create_pseudoterminal(int *master_file_descriptor, int *slave_file_descriptor, char **session_id);
-int fork_and_exec_shell(int master_file_descriptor, int slave_file_descriptor);
+int fork_and_exec_shell(int master_file_descriptor, int slave_file_descriptor, const char *session_id);
 const char * get_default_shell(void);
-ssize_t send_input(char *command, int master_file_descriptor, size_t command_n_bytes);
-void read_loop(int master_file_descriptor, void (*on_output)(const char *buffer, ssize_t n_bytes_read, void *context), void *context);
+ssize_t send_input(char *command, int master_file_descriptor, size_t command_n_bytes, const char *session_id);
+void read_loop(int master_file_descriptor, const char *session_id void (*on_output)(const char *buffer, ssize_t n_bytes_read, void *context), void *context);
 
 /*
  * Create a new pseudoterminal session, this function is just a wrapper of the openpty() function
@@ -40,7 +41,11 @@ int create_pseudoterminal(int *master_file_descriptor, int *slave_file_descripto
  * if we don't fork(), so we create a new child process that is the exact copy of this one,
  * then the exec() will replace the current process, and the app would crash
  */
-int fork_and_exec_shell(int master_file_descriptor, int slave_file_descriptor) {
+int fork_and_exec_shell(int master_file_descriptor, int slave_file_descriptor, const char *session_id) {
+    char *file_path = get_log_file_path_by_session_id(session_id);
+    FILE *log_file = fopen(file_path, "a");
+    free(file_path);
+
     // pid_t here is just an alias for an integer/long value, depending on the OS
     pid_t child_process_pid = fork();
 
@@ -96,15 +101,22 @@ const char * get_default_shell(void) {
  * Send input to the master_fd that sends it to the slave, and the slave shell elaborates
  * and sends to the STDOUT of the slave, that will be read by the master, and then by the user app
  */
-ssize_t send_input(char *command, int master_file_descriptor, size_t command_n_bytes) {
+ssize_t send_input(char *command, int master_file_descriptor, size_t command_n_bytes, const char *session_id) {
+    char *file_path = get_log_file_path_by_session_id(session_id);
+    FILE *log_file = fopen(file_path, "a");
+    free(file_path);
+
     return write(master_file_descriptor, command, command_n_bytes);
 }
 
 /*
  * Reading the STDOUT connected to the slave connected to the given master
  */
-void read_loop(int master_file_descriptor, void (*on_output)(const char *buffer, ssize_t n_bytes_read, void *context), void *context) {
+void read_loop(int master_file_descriptor, const char *session_id, void (*on_output)(const char *buffer, ssize_t n_bytes_read, void *context), void *context) {
     char buffer[BUFFER_SIZE];
+    char *file_path = get_log_file_path_by_session_id(session_id);
+    FILE *log_file = fopen(file_path, "a");
+    free(file_path);
 
     struct pollfd poll_file_descriptor = { .fd = master_file_descriptor, .events = POLLIN };
 
@@ -116,7 +128,7 @@ void read_loop(int master_file_descriptor, void (*on_output)(const char *buffer,
     // in our case we just have 1, so we could simplify to == 1, but i don't know if in the future i want
     // to put more fds in this function
     while(poll(&poll_file_descriptor, 1, -1) > 0) {
-        // we need to use bitwise AND with POLLIN, becasue the might be also the POLLHUP events (that means connection close) with some output
+        // we need to use bitwise AND with POLLIN, becasue there might be also the POLLHUP events (that means connection close) with some output
         // if we use == we will lose this edge case
         if((poll_file_descriptor.revents & POLLIN) > 0) {
             ssize_t n_bytes_read = read(master_file_descriptor, buffer, BUFFER_SIZE);
@@ -126,6 +138,7 @@ void read_loop(int master_file_descriptor, void (*on_output)(const char *buffer,
             if(n_bytes_read <= 0) break;
 
             on_output(buffer, n_bytes_read, context);
+
         }
     }
 }

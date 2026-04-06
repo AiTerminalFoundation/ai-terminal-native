@@ -64,7 +64,6 @@ char * generate_string_uuid_v7(void) {
     uint16_t variant_and_rand = (uint16_t)(uuid_v7.lower >> 48);
     uint64_t rand = uuid_v7.lower & 0xFFFFFFFFFFFF;
 
-
     // writing formatted string
     snprintf(uuid_str, 37, "%08x-%04x-%04x-%04x-%12llx", ts_first_part, ts_second_part, ver_and_micros, variant_and_rand, rand);
     return uuid_str;
@@ -79,4 +78,14 @@ uint64_t generate_random_value_64_bits(void) {
     close(urandom_file_descriptor);
 
     return value;
+}
+
+
+char * get_log_file_path_by_session_id(const char *session_id) {
+    char *prefix_path = "/tmp/terminal_session_";
+    char *extension = ".log";
+
+    char *file_path = malloc(strlen(prefix_path) + strlen(session_id) + strlen(extension) + 1); // +1 is for the \0 terminator
+    sprintf(file_path, "%s%s%s", prefix_path, session_id, extension);
+    return file_path;
 }

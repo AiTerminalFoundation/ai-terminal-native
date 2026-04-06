@@ -12,5 +12,6 @@ typedef struct {
 uuid_v7 generate_uuid_v7(void);
 uint64_t vigenerate_random_value_64_bits(void);
 char * generate_string_uuid_v7(void);
+char * get_log_file_path_by_session_id(const char *session_id);
 
 #endif
