@@ -23,7 +23,7 @@ int create_pseudoterminal(int *master_file_descriptor, int *slave_file_descripto
 int fork_and_exec_shell(int master_file_descriptor, int slave_file_descriptor, const char *session_id);
 const char * get_default_shell(void);
 ssize_t send_input(char *command, int master_file_descriptor, size_t command_n_bytes, const char *session_id);
-void read_loop(int master_file_descriptor, const char *session_id void (*on_output)(const char *buffer, ssize_t n_bytes_read, void *context), void *context);
+void read_loop(int master_file_descriptor, const char *session_id, void (*on_output)(const char *buffer, ssize_t n_bytes_read, void *context), void *context);
 
 /*
  * Create a new pseudoterminal session, this function is just a wrapper of the openpty() function
