@@ -4,6 +4,7 @@
 #include <stdio.h>
 #include <fcntl.h>
 #include <unistd.h>
+#include <string.h>
 #include "utils.h"
 
 
@@ -57,7 +58,7 @@ char * generate_string_uuid_v7(void) {
     char *uuid_str = malloc(37); // 32 bytes for the values, 4 dashes, 1 null terminator
                             
     uuid_v7 uuid_v7 = generate_uuid_v7();
-    
+
     uint32_t ts_first_part = (uint32_t)(uuid_v7.upper >> 32);
     uint16_t ts_second_part = (uint16_t)((uuid_v7.upper >> 16) & 0xFFFF);
     uint16_t ver_and_micros = (uint16_t)(uuid_v7.upper & 0xFFFF);
@@ -81,9 +82,12 @@ uint64_t generate_random_value_64_bits(void) {
 }
 
 
+/* 
+ * Returns the log file path by the session id, the file_path string needs to be freed by the function that uses this.
+ */
 char * get_log_file_path_by_session_id(const char *session_id) {
-    char *prefix_path = "/tmp/terminal_session_";
-    char *extension = ".log";
+    const char *prefix_path = "/tmp/terminal_session_";
+    const char *extension = ".log";
 
     char *file_path = malloc(strlen(prefix_path) + strlen(session_id) + strlen(extension) + 1); // +1 is for the \0 terminator
     sprintf(file_path, "%s%s%s", prefix_path, session_id, extension);

@@ -1,0 +1,157 @@
+#include "logger.h"
+#include "utils.h"
+#include <ctype.h>
+#include <stdio.h>
+#include <stdlib.h>
+#include <string.h>
+#include <time.h>
+
+struct terminal_logger {
+    int master_file_descriptor;
+    char *session_id;
+    FILE *log_file;
+    struct terminal_logger *next;
+};
+
+static struct terminal_logger *terminal_loggers = NULL;
+
+static int log_event(FILE *log_file, const char *severity, const char *event, const void *payload, size_t payload_size);
+
+terminal_logger *terminal_logger_create(int master_file_descriptor, const char *session_id) {
+    char *file_path = get_log_file_path_by_session_id(session_id);
+    if (file_path == NULL) {
+        return NULL;
+    }
+
+    FILE *log_file = fopen(file_path, "a");
+    free(file_path);
+
+    if (log_file == NULL) {
+        return NULL;
+    }
+
+    char *owned_session_id = strdup(session_id);
+    if (owned_session_id == NULL) {
+        fclose(log_file);
+        return NULL;
+    }
+
+    terminal_logger *logger = malloc(sizeof(*logger));
+    if (logger == NULL) {
+        free(owned_session_id);
+        fclose(log_file);
+        return NULL;
+    }
+
+    logger->master_file_descriptor = master_file_descriptor;
+    logger->session_id = owned_session_id;
+    logger->log_file = log_file;
+    logger->next = terminal_loggers;
+    terminal_loggers = logger;
+
+    terminal_logger_log(logger, "INFO", "SESSION_CREATED", logger->session_id, strlen(logger->session_id));
+    return logger;
+}
+
+terminal_logger *terminal_logger_find(int master_file_descriptor) {
+    terminal_logger *current = terminal_loggers;
+
+    while (current != NULL) {
+        if (current->master_file_descriptor == master_file_descriptor) {
+            return current;
+        }
+        current = current->next;
+    }
+
+    return NULL;
+}
+
+const char *terminal_logger_session_id(const terminal_logger *logger) {
+    return logger != NULL ? logger->session_id : NULL;
+}
+
+int terminal_logger_log(terminal_logger *logger, const char *severity, const char *event, const void *payload, size_t payload_size) {
+    if (logger == NULL) {
+        return -1;
+    }
+
+    return log_event(logger->log_file, severity, event, payload, payload_size);
+}
+
+void terminal_logger_close(int master_file_descriptor, const char *event) {
+    terminal_logger **current = &terminal_loggers;
+
+    while (*current != NULL) {
+        terminal_logger *logger = *current;
+
+        if (logger->master_file_descriptor == master_file_descriptor) {
+            *current = logger->next;
+
+            if (logger->log_file != NULL) {
+                terminal_logger_log(logger, "INFO", event, logger->session_id, strlen(logger->session_id));
+                fclose(logger->log_file);
+            }
+
+            free(logger->session_id);
+            free(logger);
+            return;
+        }
+
+        current = &logger->next;
+    }
+}
+
+static int log_event(FILE *log_file, const char *severity, const char *event, const void *payload, size_t payload_size) {
+    if (log_file == NULL || severity == NULL || event == NULL) {
+        return -1;
+    }
+
+    struct timespec now;
+    if (clock_gettime(CLOCK_REALTIME, &now) != 0) {
+        return -1;
+    }
+
+    struct tm local_time;
+    if (localtime_r(&now.tv_sec, &local_time) == NULL) {
+        return -1;
+    }
+
+    char timestamp[32];
+    if (strftime(timestamp, sizeof(timestamp), "%Y-%m-%dT%H:%M:%S", &local_time) == 0) {
+        return -1;
+    }
+
+    if (fprintf(log_file, "[%s.%03ld] [%s] [%s]", timestamp, now.tv_nsec / 1000000L, severity, event) < 0) {
+        return -1;
+    }
+
+    if (payload != NULL && payload_size > 0) {
+        const unsigned char *bytes = payload;
+
+        if (fputs(" ", log_file) == EOF) {
+            return -1;
+        }
+
+        for (size_t index = 0; index < payload_size; index++) {
+            unsigned char byte = bytes[index];
+
+            if (byte == '\n') {
+                if (fputs("\\n", log_file) == EOF) return -1;
+            } else if (byte == '\r') {
+                if (fputs("\\r", log_file) == EOF) return -1;
+            } else if (byte == '\t') {
+                if (fputs("\\t", log_file) == EOF) return -1;
+            } else if (isprint(byte)) {
+                if (fputc(byte, log_file) == EOF) return -1;
+            } else {
+                if (fprintf(log_file, "\\x%02X", byte) < 0) return -1;
+            }
+        }
+    }
+
+    if (fputc('\n', log_file) == EOF) {
+        return -1;
+    }
+
+    return fflush(log_file);
+}

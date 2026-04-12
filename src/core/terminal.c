@@ -7,6 +7,7 @@
 
 
 #include "terminal.h"
+#include "logger.h"
 #include "utils.h"
 #include <stdlib.h>
 #include <unistd.h>
@@ -15,15 +16,15 @@
 #include <sys/types.h>
 #include <sys/uio.h>
 #include <string.h>
+#include <errno.h>
 
 #define BUFFER_SIZE 4096
-
-
 int create_pseudoterminal(int *master_file_descriptor, int *slave_file_descriptor, char **session_id);
-int fork_and_exec_shell(int master_file_descriptor, int slave_file_descriptor, const char *session_id);
+int fork_and_exec_shell(int master_file_descriptor, int slave_file_descriptor);
 const char * get_default_shell(void);
-ssize_t send_input(char *command, int master_file_descriptor, size_t command_n_bytes, const char *session_id);
-void read_loop(int master_file_descriptor, const char *session_id, void (*on_output)(const char *buffer, ssize_t n_bytes_read, void *context), void *context);
+ssize_t send_input(char *command, int master_file_descriptor, size_t command_n_bytes);
+void read_loop(int master_file_descriptor, void (*on_output)(const char *buffer, ssize_t n_bytes_read, void *context), void *context);
+void close_terminal_session(int master_file_descriptor);
 
 /*
  * Create a new pseudoterminal session, this function is just a wrapper of the openpty() function
@@ -33,7 +34,26 @@ void read_loop(int master_file_descriptor, const char *session_id, void (*on_out
  */
 int create_pseudoterminal(int *master_file_descriptor, int *slave_file_descriptor, char **session_id) {
     *session_id = generate_string_uuid_v7();
-    return openpty(master_file_descriptor, slave_file_descriptor, NULL, NULL, NULL);
+    if (*session_id == NULL) {
+        return -1;
+    }
+
+    int openpty_result = openpty(master_file_descriptor, slave_file_descriptor, NULL, NULL, NULL);
+    if (openpty_result != 0) {
+        free(*session_id);
+        *session_id = NULL;
+        return openpty_result;
+    }
+
+    if (terminal_logger_create(*master_file_descriptor, *session_id) == NULL) {
+        close(*master_file_descriptor);
+        close(*slave_file_descriptor);
+        free(*session_id);
+        *session_id = NULL;
+        return -1;
+    }
+
+    return 0;
 }
 
 /*
@@ -41,15 +61,15 @@ int create_pseudoterminal(int *master_file_descriptor, int *slave_file_descripto
  * if we don't fork(), so we create a new child process that is the exact copy of this one,
  * then the exec() will replace the current process, and the app would crash
  */
-int fork_and_exec_shell(int master_file_descriptor, int slave_file_descriptor, const char *session_id) {
-    char *file_path = get_log_file_path_by_session_id(session_id);
-    FILE *log_file = fopen(file_path, "a");
-    free(file_path);
-
+int fork_and_exec_shell(int master_file_descriptor, int slave_file_descriptor) {
+    terminal_logger *logger = terminal_logger_find(master_file_descriptor);
     // pid_t here is just an alias for an integer/long value, depending on the OS
     pid_t child_process_pid = fork();
 
     if (child_process_pid == -1) { // fork() is failed
+        if (logger != NULL) {
+            terminal_logger_log(logger, "ERROR", "SHELL_FORK_FAILED", strerror(errno), strlen(strerror(errno)));
+        }
         return -1;
     } else if (child_process_pid == 0) {
         // child process, creation of the shell
@@ -82,9 +102,13 @@ int fork_and_exec_shell(int master_file_descriptor, int slave_file_descriptor, c
 
         //-f doesn't load startup files, useful for now to manage prompt patterns
         execlp(default_shell, default_shell, "-f", "-o", "promptsubst", NULL);
-        
-        return 0;
+        _exit(127);
     } else {
+        if (logger != NULL) {
+            char message[128];
+            snprintf(message, sizeof(message), "pid=%d session=%s", child_process_pid, terminal_logger_session_id(logger));
+            terminal_logger_log(logger, "INFO", "SHELL_STARTED", message, strlen(message));
+        }
         // parent process, it doesn't need the slave
         close(slave_file_descriptor);
         return child_process_pid;
@@ -101,22 +125,20 @@ const char * get_default_shell(void) {
  * Send input to the master_fd that sends it to the slave, and the slave shell elaborates
  * and sends to the STDOUT of the slave, that will be read by the master, and then by the user app
  */
-ssize_t send_input(char *command, int master_file_descriptor, size_t command_n_bytes, const char *session_id) {
-    char *file_path = get_log_file_path_by_session_id(session_id);
-    FILE *log_file = fopen(file_path, "a");
-    free(file_path);
-
+ssize_t send_input(char *command, int master_file_descriptor, size_t command_n_bytes) {
+    terminal_logger *logger = terminal_logger_find(master_file_descriptor);
+    if (logger != NULL) {
+        terminal_logger_log(logger, "INFO", "INPUT", command, command_n_bytes);
+    }
     return write(master_file_descriptor, command, command_n_bytes);
 }
 
 /*
  * Reading the STDOUT connected to the slave connected to the given master
  */
-void read_loop(int master_file_descriptor, const char *session_id, void (*on_output)(const char *buffer, ssize_t n_bytes_read, void *context), void *context) {
+void read_loop(int master_file_descriptor, void (*on_output)(const char *buffer, ssize_t n_bytes_read, void *context), void *context) {
     char buffer[BUFFER_SIZE];
-    char *file_path = get_log_file_path_by_session_id(session_id);
-    FILE *log_file = fopen(file_path, "a");
-    free(file_path);
+    terminal_logger *logger = terminal_logger_find(master_file_descriptor);
 
     struct pollfd poll_file_descriptor = { .fd = master_file_descriptor, .events = POLLIN };
 
@@ -137,9 +159,17 @@ void read_loop(int master_file_descriptor, const char *session_id, void (*on_out
             // TODO: add a counter for the error to have some sort of reliability before exiting the loop
             if(n_bytes_read <= 0) break;
 
+            if (logger != NULL) {
+                terminal_logger_log(logger, "INFO", "OUTPUT", buffer, (size_t)n_bytes_read);
+            }
             on_output(buffer, n_bytes_read, context);
-
         }
     }
+
+    terminal_logger_close(master_file_descriptor, "SESSION_CLOSED");
 }
 
+void close_terminal_session(int master_file_descriptor) {
+    close(master_file_descriptor);
+    terminal_logger_close(master_file_descriptor, "SESSION_CLOSED");
+}
