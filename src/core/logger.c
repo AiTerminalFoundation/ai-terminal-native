@@ -5,6 +5,7 @@
 #include <stdlib.h>
 #include <string.h>
 #include <time.h>
+#include <stdint.h>
 
 struct terminal_logger {
     int master_file_descriptor;
@@ -16,6 +17,7 @@ struct terminal_logger {
 static struct terminal_logger *terminal_loggers = NULL;
 
 static char *get_log_file_path_by_session_id(const char *session_id);
+static int64_t get_current_timestamp_nanoseconds(void);
 static int log_event(FILE *log_file, const char *severity, const char *event, const void *payload, size_t payload_size);
 
 static char *get_log_file_path_by_session_id(const char *session_id) {
@@ -29,6 +31,16 @@ static char *get_log_file_path_by_session_id(const char *session_id) {
 
     sprintf(file_path, "%s%s%s", prefix_path, session_id, extension);
     return file_path;
+}
+
+static int64_t get_current_timestamp_nanoseconds(void) {
+    struct timespec timestamp = {0};
+
+    if (clock_gettime(CLOCK_REALTIME, &timestamp) != 0) {
+        return -1;
+    }
+
+    return ((int64_t)timestamp.tv_sec * 1000000000LL) + timestamp.tv_nsec;
 }
 
 terminal_logger *terminal_logger_create(int master_file_descriptor, const char *session_id) {
@@ -120,22 +132,12 @@ static int log_event(FILE *log_file, const char *severity, const char *event, co
         return -1;
     }
 
-    struct timespec now;
-    if (clock_gettime(CLOCK_REALTIME, &now) != 0) {
+    int64_t timestamp_nanoseconds = get_current_timestamp_nanoseconds();
+    if (timestamp_nanoseconds < 0) {
         return -1;
     }
 
-    struct tm local_time;
-    if (localtime_r(&now.tv_sec, &local_time) == NULL) {
-        return -1;
-    }
-
-    char timestamp[32];
-    if (strftime(timestamp, sizeof(timestamp), "%Y-%m-%dT%H:%M:%S", &local_time) == 0) {
-        return -1;
-    }
-
-    if (fprintf(log_file, "[%s.%03ld] [%s] [%s]", timestamp, now.tv_nsec / 1000000L, severity, event) < 0) {
+    if (fprintf(log_file, "[%lld] [%s] [%s]", (long long)timestamp_nanoseconds, severity, event) < 0) {
         return -1;
     }
 
