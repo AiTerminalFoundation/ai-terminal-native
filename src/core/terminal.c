@@ -7,22 +7,23 @@
 
 
 #include "terminal.h"
+#include "logger.h"
 #include "utils.h"
 #include <stdlib.h>
-#include <unistd.h>
-#include <sys/ioctl.h>
+#include <errno.h>
 #include <poll.h>
-#include <sys/types.h>
-#include <sys/uio.h>
+#include <stdio.h>
+#include <string.h>
+#include <sys/ioctl.h>
+#include <unistd.h>
 
 #define BUFFER_SIZE 4096
-
-
 int create_pseudoterminal(int *master_file_descriptor, int *slave_file_descriptor, char **session_id);
 int fork_and_exec_shell(int master_file_descriptor, int slave_file_descriptor);
 const char * get_default_shell(void);
 ssize_t send_input(char *command, int master_file_descriptor, size_t command_n_bytes);
 void read_loop(int master_file_descriptor, void (*on_output)(const char *buffer, ssize_t n_bytes_read, void *context), void *context);
+void close_terminal_session(int master_file_descriptor);
 
 /*
  * Create a new pseudoterminal session, this function is just a wrapper of the openpty() function
@@ -32,7 +33,26 @@ void read_loop(int master_file_descriptor, void (*on_output)(const char *buffer,
  */
 int create_pseudoterminal(int *master_file_descriptor, int *slave_file_descriptor, char **session_id) {
     *session_id = generate_string_uuid_v7();
-    return openpty(master_file_descriptor, slave_file_descriptor, NULL, NULL, NULL);
+    if (*session_id == NULL) {
+        return -1;
+    }
+
+    int openpty_result = openpty(master_file_descriptor, slave_file_descriptor, NULL, NULL, NULL);
+    if (openpty_result != 0) {
+        free(*session_id);
+        *session_id = NULL;
+        return openpty_result;
+    }
+
+    if (terminal_logger_create(*master_file_descriptor, *session_id) == NULL) {
+        close(*master_file_descriptor);
+        close(*slave_file_descriptor);
+        free(*session_id);
+        *session_id = NULL;
+        return -1;
+    }
+
+    return 0;
 }
 
 /*
@@ -41,10 +61,14 @@ int create_pseudoterminal(int *master_file_descriptor, int *slave_file_descripto
  * then the exec() will replace the current process, and the app would crash
  */
 int fork_and_exec_shell(int master_file_descriptor, int slave_file_descriptor) {
+    terminal_logger *logger = terminal_logger_find(master_file_descriptor);
     // pid_t here is just an alias for an integer/long value, depending on the OS
     pid_t child_process_pid = fork();
 
     if (child_process_pid == -1) { // fork() is failed
+        if (logger != NULL) {
+            terminal_logger_log(logger, "ERROR", "SHELL_FORK_FAILED", strerror(errno), strlen(strerror(errno)));
+        }
         return -1;
     } else if (child_process_pid == 0) {
         // child process, creation of the shell
@@ -77,9 +101,13 @@ int fork_and_exec_shell(int master_file_descriptor, int slave_file_descriptor) {
 
         //-f doesn't load startup files, useful for now to manage prompt patterns
         execlp(default_shell, default_shell, "-f", "-o", "promptsubst", NULL);
-        
-        return 0;
+        _exit(127);
     } else {
+        if (logger != NULL) {
+            char message[128];
+            snprintf(message, sizeof(message), "pid=%d session=%s", child_process_pid, terminal_logger_session_id(logger));
+            terminal_logger_log(logger, "INFO", "SHELL_STARTED", message, strlen(message));
+        }
         // parent process, it doesn't need the slave
         close(slave_file_descriptor);
         return child_process_pid;
@@ -97,6 +125,10 @@ const char * get_default_shell(void) {
  * and sends to the STDOUT of the slave, that will be read by the master, and then by the user app
  */
 ssize_t send_input(char *command, int master_file_descriptor, size_t command_n_bytes) {
+    terminal_logger *logger = terminal_logger_find(master_file_descriptor);
+    if (logger != NULL) {
+        terminal_logger_log(logger, "INFO", "INPUT", command, command_n_bytes);
+    }
     return write(master_file_descriptor, command, command_n_bytes);
 }
 
@@ -105,6 +137,7 @@ ssize_t send_input(char *command, int master_file_descriptor, size_t command_n_b
  */
 void read_loop(int master_file_descriptor, void (*on_output)(const char *buffer, ssize_t n_bytes_read, void *context), void *context) {
     char buffer[BUFFER_SIZE];
+    terminal_logger *logger = terminal_logger_find(master_file_descriptor);
 
     struct pollfd poll_file_descriptor = { .fd = master_file_descriptor, .events = POLLIN };
 
@@ -116,7 +149,7 @@ void read_loop(int master_file_descriptor, void (*on_output)(const char *buffer,
     // in our case we just have 1, so we could simplify to == 1, but i don't know if in the future i want
     // to put more fds in this function
     while(poll(&poll_file_descriptor, 1, -1) > 0) {
-        // we need to use bitwise AND with POLLIN, becasue the might be also the POLLHUP events (that means connection close) with some output
+        // we need to use bitwise AND with POLLIN, becasue there might be also the POLLHUP events (that means connection close) with some output
         // if we use == we will lose this edge case
         if((poll_file_descriptor.revents & POLLIN) > 0) {
             ssize_t n_bytes_read = read(master_file_descriptor, buffer, BUFFER_SIZE);
@@ -125,8 +158,17 @@ void read_loop(int master_file_descriptor, void (*on_output)(const char *buffer,
             // TODO: add a counter for the error to have some sort of reliability before exiting the loop
             if(n_bytes_read <= 0) break;
 
+            if (logger != NULL) {
+                terminal_logger_log(logger, "INFO", "OUTPUT", buffer, (size_t)n_bytes_read);
+            }
             on_output(buffer, n_bytes_read, context);
         }
     }
+
+    terminal_logger_close(master_file_descriptor, "SESSION_CLOSED");
 }
 
+void close_terminal_session(int master_file_descriptor) {
+    close(master_file_descriptor);
+    terminal_logger_close(master_file_descriptor, "SESSION_CLOSED");
+}

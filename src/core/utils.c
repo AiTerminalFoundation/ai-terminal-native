@@ -57,13 +57,12 @@ char * generate_string_uuid_v7(void) {
     char *uuid_str = malloc(37); // 32 bytes for the values, 4 dashes, 1 null terminator
                             
     uuid_v7 uuid_v7 = generate_uuid_v7();
-    
+
     uint32_t ts_first_part = (uint32_t)(uuid_v7.upper >> 32);
     uint16_t ts_second_part = (uint16_t)((uuid_v7.upper >> 16) & 0xFFFF);
     uint16_t ver_and_micros = (uint16_t)(uuid_v7.upper & 0xFFFF);
     uint16_t variant_and_rand = (uint16_t)(uuid_v7.lower >> 48);
     uint64_t rand = uuid_v7.lower & 0xFFFFFFFFFFFF;
-
 
     // writing formatted string
     snprintf(uuid_str, 37, "%08x-%04x-%04x-%04x-%12llx", ts_first_part, ts_second_part, ver_and_micros, variant_and_rand, rand);
