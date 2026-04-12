@@ -10,13 +10,12 @@
 #include "logger.h"
 #include "utils.h"
 #include <stdlib.h>
-#include <unistd.h>
-#include <sys/ioctl.h>
-#include <poll.h>
-#include <sys/types.h>
-#include <sys/uio.h>
-#include <string.h>
 #include <errno.h>
+#include <poll.h>
+#include <stdio.h>
+#include <string.h>
+#include <sys/ioctl.h>
+#include <unistd.h>
 
 #define BUFFER_SIZE 4096
 int create_pseudoterminal(int *master_file_descriptor, int *slave_file_descriptor, char **session_id);
