@@ -7,6 +7,7 @@
 	objects = {
 
 /* Begin PBXBuildFile section */
+		FB2E4F312FEBC0A600A1B2C3 /* logger.c in Sources */ = {isa = PBXBuildFile; fileRef = FB2E4F302FEBC0A600A1B2C3 /* logger.c */; };
 		FBB7AE212F4B3E7E00354FFC /* terminal.c in Sources */ = {isa = PBXBuildFile; fileRef = FBB7AE1F2F4B3E7E00354FFC /* terminal.c */; };
 		FBC163A52F5DEC12004FDC91 /* utils.c in Sources */ = {isa = PBXBuildFile; fileRef = FBC163A42F5DEC12004FDC91 /* utils.c */; };
 /* End PBXBuildFile section */
@@ -16,6 +17,8 @@
 		FBB7AE1D2F4B3E7E00354FFC /* main.c */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.c; path = main.c; sourceTree = "<group>"; };
 		FBB7AE1E2F4B3E7E00354FFC /* terminal.h */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.h; path = terminal.h; sourceTree = "<group>"; };
 		FBB7AE1F2F4B3E7E00354FFC /* terminal.c */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.c; path = terminal.c; sourceTree = "<group>"; };
+		FB2E4F2F2FEBC0A600A1B2C3 /* logger.h */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.h; path = logger.h; sourceTree = "<group>"; };
+		FB2E4F302FEBC0A600A1B2C3 /* logger.c */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.c; path = logger.c; sourceTree = "<group>"; };
 		FBC163A32F5DEC12004FDC91 /* utils.h */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.h; path = utils.h; sourceTree = "<group>"; };
 		FBC163A42F5DEC12004FDC91 /* utils.c */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.c; path = utils.c; sourceTree = "<group>"; };
 /* End PBXFileReference section */
@@ -73,6 +76,8 @@
 			isa = PBXGroup;
 			children = (
 				FBB7AE1D2F4B3E7E00354FFC /* main.c */,
+				FB2E4F2F2FEBC0A600A1B2C3 /* logger.h */,
+				FB2E4F302FEBC0A600A1B2C3 /* logger.c */,
 				FBB7AE1E2F4B3E7E00354FFC /* terminal.h */,
 				FBB7AE1F2F4B3E7E00354FFC /* terminal.c */,
 				FBC163A32F5DEC12004FDC91 /* utils.h */,
@@ -156,6 +161,7 @@
 			isa = PBXSourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
+				FB2E4F312FEBC0A600A1B2C3 /* logger.c in Sources */,
 				FBC163A52F5DEC12004FDC91 /* utils.c in Sources */,
 				FBB7AE212F4B3E7E00354FFC /* terminal.c in Sources */,
 			);
