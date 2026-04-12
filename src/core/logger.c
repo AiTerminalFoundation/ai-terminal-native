@@ -15,7 +15,21 @@ struct terminal_logger {
 
 static struct terminal_logger *terminal_loggers = NULL;
 
+static char *get_log_file_path_by_session_id(const char *session_id);
 static int log_event(FILE *log_file, const char *severity, const char *event, const void *payload, size_t payload_size);
+
+static char *get_log_file_path_by_session_id(const char *session_id) {
+    const char *prefix_path = "/tmp/terminal_session_";
+    const char *extension = ".log";
+
+    char *file_path = malloc(strlen(prefix_path) + strlen(session_id) + strlen(extension) + 1);
+    if (file_path == NULL) {
+        return NULL;
+    }
+
+    sprintf(file_path, "%s%s%s", prefix_path, session_id, extension);
+    return file_path;
+}
 
 terminal_logger *terminal_logger_create(int master_file_descriptor, const char *session_id) {
     char *file_path = get_log_file_path_by_session_id(session_id);

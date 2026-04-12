@@ -80,16 +80,3 @@ uint64_t generate_random_value_64_bits(void) {
 
     return value;
 }
-
-
-/* 
- * Returns the log file path by the session id, the file_path string needs to be freed by the function that uses this.
- */
-char * get_log_file_path_by_session_id(const char *session_id) {
-    const char *prefix_path = "/tmp/terminal_session_";
-    const char *extension = ".log";
-
-    char *file_path = malloc(strlen(prefix_path) + strlen(session_id) + strlen(extension) + 1); // +1 is for the \0 terminator
-    sprintf(file_path, "%s%s%s", prefix_path, session_id, extension);
-    return file_path;
-}
