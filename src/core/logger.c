@@ -18,6 +18,7 @@ static struct terminal_logger *terminal_loggers = NULL;
 
 static char *get_log_file_path_by_session_id(const char *session_id);
 static int64_t get_current_timestamp_nanoseconds(void);
+static int write_log_payload(FILE *log_file, const void *payload, size_t payload_size);
 static int log_event(FILE *log_file, const char *severity, const char *event, const void *payload, size_t payload_size);
 
 static char *get_log_file_path_by_session_id(const char *session_id) {
@@ -41,6 +42,50 @@ static int64_t get_current_timestamp_nanoseconds(void) {
     }
 
     return ((int64_t)timestamp.tv_sec * 1000000000LL) + timestamp.tv_nsec;
+}
+
+static int write_log_payload(FILE *log_file, const void *payload, size_t payload_size) {
+    const unsigned char *bytes = payload;
+
+    if (fputs(" ", log_file) == EOF) {
+        return -1;
+    }
+
+    // Terminal output may contain arbitrary raw bytes. Keep printable bytes readable
+    // and escape control/binary bytes so the log stays text-safe.
+    for (size_t index = 0; index < payload_size; index++) {
+        unsigned char byte = bytes[index];
+
+        switch (byte) {
+            case '\n':
+                // Escape newlines to keep each log event on a single line.
+                if (fputs("\\n", log_file) == EOF) return -1;
+                break;
+            case '\r':
+                // Escape carriage returns so terminal cursor-control bytes stay visible.
+                if (fputs("\\r", log_file) == EOF) return -1;
+                break;
+            case '\t':
+                // Escape tabs to avoid changing the visual alignment of the log file.
+                if (fputs("\\t", log_file) == EOF) return -1;
+                break;
+            default:
+                if (isprint(byte)) {
+                    // Keep printable ASCII bytes readable in the log output.
+                    if (fputc(byte, log_file) == EOF) return -1;
+                } else {
+                    // Escape all other control/binary bytes as hexadecimal sequences.
+                    if (fprintf(log_file, "\\x%02X", byte) < 0) return -1;
+                }
+                break;
+        }
+    }
+
+    if (fputc('\n', log_file) == EOF) {
+        return -1;
+    }
+
+    return 0;
 }
 
 terminal_logger *terminal_logger_create(int master_file_descriptor, const char *session_id) {
@@ -133,6 +178,7 @@ static int log_event(FILE *log_file, const char *severity, const char *event, co
     }
 
     int64_t timestamp_nanoseconds = get_current_timestamp_nanoseconds();
+
     if (timestamp_nanoseconds < 0) {
         return -1;
     }
@@ -142,31 +188,9 @@ static int log_event(FILE *log_file, const char *severity, const char *event, co
     }
 
     if (payload != NULL && payload_size > 0) {
-        const unsigned char *bytes = payload;
-
-        if (fputs(" ", log_file) == EOF) {
+        if (write_log_payload(log_file, payload, payload_size) != 0) {
             return -1;
         }
-
-        for (size_t index = 0; index < payload_size; index++) {
-            unsigned char byte = bytes[index];
-
-            if (byte == '\n') {
-                if (fputs("\\n", log_file) == EOF) return -1;
-            } else if (byte == '\r') {
-                if (fputs("\\r", log_file) == EOF) return -1;
-            } else if (byte == '\t') {
-                if (fputs("\\t", log_file) == EOF) return -1;
-            } else if (isprint(byte)) {
-                if (fputc(byte, log_file) == EOF) return -1;
-            } else {
-                if (fprintf(log_file, "\\x%02X", byte) < 0) return -1;
-            }
-        }
-    }
-
-    if (fputc('\n', log_file) == EOF) {
-        return -1;
     }
 
     return fflush(log_file);
