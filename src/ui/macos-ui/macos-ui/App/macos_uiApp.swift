@@ -11,7 +11,7 @@ import SwiftUI
 struct macos_uiApp: App {
     var body: some Scene {
         WindowGroup {
-            ContentView()
+            TerminalRootView()
                 .environment(\.font, .custom("JetBrainsMono-Regular", size: 12))
         }
     }

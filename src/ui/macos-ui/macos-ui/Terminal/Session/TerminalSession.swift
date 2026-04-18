@@ -20,6 +20,7 @@ final class TerminalSession: ObservableObject {
     // that can never appear in normal shell output, preventing false matches
     private static let promptPattern = #"\x01__PROMPT__:([^\x02]+)\x02"#
     private static let ansiPattern = #"\x1B(\[[0-9;?]*[A-Za-z]|\][^\x07]*\x07|[()][AB])"#
+    private static let promptRegex = try? NSRegularExpression(pattern: promptPattern)
 
     @Published var output: String = ""
     @Published var currentPrompt: String = ""
@@ -27,6 +28,8 @@ final class TerminalSession: ObservableObject {
     private var slave_fd: Int32 = 0
     private var session_id_c_string: UnsafeMutablePointer<CChar>? = nil
     @Published var session_id: String = ""
+    private var isRunning = false
+    private var isClosed = false
     
     private static let outputCallback: @convention(c) (UnsafePointer<CChar>?, Int, UnsafeMutableRawPointer?) -> Void = { buffer, nBytes, context in
                 
@@ -41,53 +44,50 @@ final class TerminalSession: ObservableObject {
                 DispatchQueue.main.async {
                     let cleaned = chunk
                         .replacingOccurrences(of: ansiPattern, with: "", options: .regularExpression)
-                    
-                    instance.output += cleaned
-                    
-                    // Search for the last occurrence of the sentinel prompt using regex.
-                    // We use the last match in case multiple prompts accumulated in the buffer.
-                    if let regex = try? NSRegularExpression(pattern: TerminalSession.promptPattern),
-                       let match = regex.matches(
-                           in: instance.output,
-                           range: NSRange(instance.output.startIndex..., in: instance.output)
-                       ).last,
-                       let folderRange = Range(match.range(at: 1), in: instance.output),
-                       let fullMatchRange = Range(match.range(at: 0), in: instance.output) {
 
-                        // Group 1 contains the expanded path, e.g. /Users/you/project
-                        instance.currentPrompt = String(instance.output[folderRange])
-
-                        // Strip the sentinel and everything after it from the visible output
-                        instance.output.removeSubrange(fullMatchRange.lowerBound..<instance.output.endIndex)
-                    }
+                    instance.appendOutputChunk(cleaned)
                 }
             }
         }
     }
 
     func start() {
+        guard !isRunning else { return }
+
+        resetSessionState()
+
         let result = create_pseudoterminal(&master_fd, &slave_fd, &session_id_c_string)
         
         // convert to Swift String
         if let session_id_c_string {
             session_id = String(cString: session_id_c_string)
             free(session_id_c_string)  // free the malloc'd C string
+            self.session_id_c_string = nil
         }
 
         
         if result == 0 {
+            isRunning = true
+            isClosed = false
 
             let forkResult = fork_and_exec_shell(master_fd, slave_fd)
             
             if forkResult < 0 {
-                fatalError("Couldn't fork and execute shell")
+                output = "SHELL FAILED TO START"
+                stop()
+                return
             }
                         
-            // converts self into a raw void* pointer so it can be passed to C.
-            // passUnretained doesn't increment the reference count, given that C doesn't own it
-            let context = Unmanaged.passUnretained(self).toOpaque()
+            // Keep the session alive until the read loop exits so closing a tab cannot
+            // leave C callbacks pointing at a deallocated Swift object.
+            let context = Unmanaged.passRetained(self).toOpaque()
             DispatchQueue.global(qos: .userInitiated).async { [master = self.master_fd] in
                 read_loop(master, TerminalSession.outputCallback, context)
+                let session = Unmanaged<TerminalSession>.fromOpaque(context).takeUnretainedValue()
+                DispatchQueue.main.async {
+                    session.isRunning = false
+                }
+                Unmanaged<TerminalSession>.fromOpaque(context).release()
             }
             
             
@@ -99,13 +99,77 @@ final class TerminalSession: ObservableObject {
     }
     
     func send_input_string(input: String) {
+        guard isRunning, !isClosed else { return }
+
         // Ensure we send a null-terminated UTF-8 buffer to the C API expecting `char *`.
         input.withCString { cString in
             // Compute the length excluding the null terminator
             let length = strlen(cString)
             // `send_input` expects an UnsafeMutablePointer<CChar>. We can safely cast away mutability
             // here because we don't expect `send_input` to modify the buffer; if it does, we should copy.
-            send_input(UnsafeMutablePointer(mutating: cString), master_fd, Int(length))
+            let result = send_input(UnsafeMutablePointer(mutating: cString), master_fd, Int(length))
+            if result < 0 {
+                DispatchQueue.main.async {
+                    self.isRunning = false
+                }
+            }
         }
+    }
+
+    func stop() {
+        guard isRunning, !isClosed else { return }
+
+        isClosed = true
+        close_terminal_session(master_fd)
+        resetDescriptors()
+    }
+
+    deinit {
+        stop()
+    }
+
+    private func appendOutputChunk(_ cleaned: String) {
+        guard let regex = TerminalSession.promptRegex else {
+            output += cleaned
+            return
+        }
+
+        let nsRange = NSRange(cleaned.startIndex..., in: cleaned)
+        let matches = regex.matches(in: cleaned, range: nsRange)
+
+        if matches.isEmpty {
+            output += cleaned
+            return
+        }
+
+        var visibleStart = cleaned.startIndex
+
+        for match in matches {
+            guard
+                let fullMatchRange = Range(match.range(at: 0), in: cleaned),
+                let folderRange = Range(match.range(at: 1), in: cleaned)
+            else {
+                continue
+            }
+
+            output += String(cleaned[visibleStart..<fullMatchRange.lowerBound])
+            currentPrompt = String(cleaned[folderRange])
+            visibleStart = fullMatchRange.upperBound
+        }
+
+        output += String(cleaned[visibleStart...])
+    }
+
+    private func resetSessionState() {
+        resetDescriptors()
+        session_id_c_string = nil
+        session_id = ""
+        isRunning = false
+        isClosed = false
+    }
+
+    private func resetDescriptors() {
+        master_fd = 0
+        slave_fd = 0
     }
 }
