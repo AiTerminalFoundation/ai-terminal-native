@@ -101,17 +101,31 @@ final class TerminalSession: ObservableObject {
     func send_input_string(input: String) {
         guard isRunning, !isClosed else { return }
 
-        // Ensure we send a null-terminated UTF-8 buffer to the C API expecting `char *`.
-        input.withCString { cString in
-            // Compute the length excluding the null terminator
-            let length = strlen(cString)
-            // `send_input` expects an UnsafeMutablePointer<CChar>. We can safely cast away mutability
-            // here because we don't expect `send_input` to modify the buffer; if it does, we should copy.
-            let result = send_input(UnsafeMutablePointer(mutating: cString), master_fd, Int(length))
-            if result < 0 {
-                DispatchQueue.main.async {
-                    self.isRunning = false
+        let inputData = Array(input.utf8CString)
+        let inputLength = inputData.count - 1
+
+        guard inputLength > 0 else { return }
+
+        inputData.withUnsafeBufferPointer { buffer in
+            guard let baseAddress = buffer.baseAddress else { return }
+
+            var bytesSent = 0
+
+            while bytesSent < inputLength {
+                let result = send_input(
+                    UnsafeMutablePointer(mutating: baseAddress.advanced(by: bytesSent)),
+                    master_fd,
+                    inputLength - bytesSent
+                )
+
+                if result <= 0 {
+                    DispatchQueue.main.async {
+                        self.isRunning = false
+                    }
+                    return
                 }
+
+                bytesSent += result
             }
         }
     }

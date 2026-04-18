@@ -8,14 +8,17 @@ struct TerminalInputKeyHandler: ViewModifier {
         content
             .onKeyPress(.tab) {
                 session.send_input_string(input: input + "\t")
+                input = ""
                 return .handled
             }
             .onKeyPress(.upArrow) {
                 session.send_input_string(input: "\u{1B}[A")
+                input = ""
                 return .handled
             }
             .onKeyPress(.downArrow) {
                 session.send_input_string(input: "\u{1B}[B")
+                input = ""
                 return .handled
             }
     }
