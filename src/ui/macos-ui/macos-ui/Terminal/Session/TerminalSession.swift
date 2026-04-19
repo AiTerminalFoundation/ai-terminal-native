@@ -1,26 +1,9 @@
-//
-//  TerminalSession.swift
-//  macos-ui
-//
-//  Created by Michele Verriello on 22/02/26.
-//
-
-
 import Foundation
 internal import Combine
 
 final class TerminalSession: ObservableObject {
-
-    // Matches \x01__PROMPT__:user@/path\x02
-    // - "__PROMPT__:" is a unique literal prefix, unlikely to appear in normal terminal output
-    // - "([^>]+)" captures one or more characters that are not ">", which is the current folder path
-    // - ">" is the closing delimiter of the sentinel
-    // Capture group 1 contains the folder path (e.g. /Users/you/project)
-    // \x01 (SOH) and \x02 (STX) are control characters used as unique delimiters
-    // that can never appear in normal shell output, preventing false matches
-    private static let promptPattern = #"\x01__PROMPT__:([^\x02]+)\x02"#
+    // Removes common ANSI escape sequences so the Swift text view shows plain terminal output.
     private static let ansiPattern = #"\x1B(\[[0-9;?]*[A-Za-z]|\][^\x07]*\x07|[()][AB])"#
-    private static let promptRegex = try? NSRegularExpression(pattern: promptPattern)
 
     @Published var output: String = ""
     @Published var currentPrompt: String = ""
@@ -45,7 +28,7 @@ final class TerminalSession: ObservableObject {
                     let cleaned = chunk
                         .replacingOccurrences(of: ansiPattern, with: "", options: .regularExpression)
 
-                    instance.appendOutputChunk(cleaned)
+                    instance.appendOutput(cleaned)
                 }
             }
         }
@@ -146,36 +129,12 @@ final class TerminalSession: ObservableObject {
         stop()
     }
 
-    private func appendOutputChunk(_ cleaned: String) {
-        guard let regex = TerminalSession.promptRegex else {
-            output += cleaned
-            return
-        }
+    func appendOutput(_ text: String) {
+        output += text
+    }
 
-        let nsRange = NSRange(cleaned.startIndex..., in: cleaned)
-        let matches = regex.matches(in: cleaned, range: nsRange)
-
-        if matches.isEmpty {
-            output += cleaned
-            return
-        }
-
-        var visibleStart = cleaned.startIndex
-
-        for match in matches {
-            guard
-                let fullMatchRange = Range(match.range(at: 0), in: cleaned),
-                let folderRange = Range(match.range(at: 1), in: cleaned)
-            else {
-                continue
-            }
-
-            output += String(cleaned[visibleStart..<fullMatchRange.lowerBound])
-            currentPrompt = String(cleaned[folderRange])
-            visibleStart = fullMatchRange.upperBound
-        }
-
-        output += String(cleaned[visibleStart...])
+    func updatePrompt(_ prompt: String) {
+        currentPrompt = prompt.trimmingCharacters(in: .whitespacesAndNewlines)
     }
 
     private func resetSessionState() {
@@ -184,6 +143,7 @@ final class TerminalSession: ObservableObject {
         session_id = ""
         isRunning = false
         isClosed = false
+        currentPrompt = ""
     }
 
     private func resetDescriptors() {
