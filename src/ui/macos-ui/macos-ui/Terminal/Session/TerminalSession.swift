@@ -24,8 +24,8 @@ final class TerminalSession: ObservableObject {
 
     @Published var output: String = ""
     @Published var currentPrompt: String = ""
-    private var master_fd: Int32 = 0
-    private var slave_fd: Int32 = 0
+    private var master_fd: Int32 = -1
+    private var slave_fd: Int32 = -1
     private var session_id_c_string: UnsafeMutablePointer<CChar>? = nil
     @Published var session_id: String = ""
     private var isRunning = false
@@ -131,11 +131,15 @@ final class TerminalSession: ObservableObject {
     }
 
     func stop() {
-        guard isRunning, !isClosed else { return }
+        guard !isClosed else { return }
 
+        let master = master_fd
         isClosed = true
-        close_terminal_session(master_fd)
+        isRunning = false
         resetDescriptors()
+
+        guard master >= 0 else { return }
+        close_terminal_session(master)
     }
 
     deinit {
@@ -183,7 +187,7 @@ final class TerminalSession: ObservableObject {
     }
 
     private func resetDescriptors() {
-        master_fd = 0
-        slave_fd = 0
+        master_fd = -1
+        slave_fd = -1
     }
 }

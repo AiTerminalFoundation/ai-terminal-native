@@ -5,9 +5,18 @@ struct TerminalTabItemView: View {
     let isSelected: Bool
     let onSelect: () -> Void
     let onClose: () -> Void
+    @ObservedObject private var session: TerminalSession
+
+    init(tab: TerminalTab, isSelected: Bool, onSelect: @escaping () -> Void, onClose: @escaping () -> Void) {
+        self.tab = tab
+        self.isSelected = isSelected
+        self.onSelect = onSelect
+        self.onClose = onClose
+        _session = ObservedObject(wrappedValue: tab.session)
+    }
 
     private var title: String {
-        let prompt = tab.session.currentPrompt.trimmingCharacters(in: .whitespacesAndNewlines)
+        let prompt = session.currentPrompt.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !prompt.isEmpty else { return tab.baseTitle }
 
         let lastPathComponent = URL(fileURLWithPath: prompt).lastPathComponent
