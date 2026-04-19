@@ -9,7 +9,7 @@
 
 uuid_v7 generate_uuid_v7(void);
 uint64_t generate_random_value_64_bits(void);
-char * generates_string_uuid_v7(void);
+char * generate_string_uuid_v7(void);
 
 /* unsafe and unpredictable as some things are left to the compiler (padding, low-high disposition of the bits)
 struct {
