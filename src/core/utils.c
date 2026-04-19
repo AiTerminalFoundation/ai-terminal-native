@@ -65,7 +65,7 @@ char * generate_string_uuid_v7(void) {
     uint64_t rand = uuid_v7.lower & 0xFFFFFFFFFFFF;
 
     // writing formatted string
-    snprintf(uuid_str, 37, "%08x-%04x-%04x-%04x-%12llx", ts_first_part, ts_second_part, ver_and_micros, variant_and_rand, rand);
+    snprintf(uuid_str, 37, "%08x-%04x-%04x-%04x-%012llx", ts_first_part, ts_second_part, ver_and_micros, variant_and_rand, rand);
     return uuid_str;
 }
 
