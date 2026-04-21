@@ -2,7 +2,6 @@ import SwiftUI
 
 struct TerminalScreenView: View {
     @ObservedObject var session: TerminalSession
-    @State private var input = ""
     @FocusState private var inputFocused: Bool
 
     var body: some View {
@@ -14,7 +13,7 @@ struct TerminalScreenView: View {
                         .textSelection(.enabled)
                         .padding(.horizontal, 5)
 
-                    TerminalInputRowView(session: session, input: $input, inputFocused: $inputFocused)
+                    TerminalInputRowView(session: session, inputFocused: $inputFocused)
                         .padding(.horizontal, 5)
 
                     Color.clear
@@ -28,7 +27,7 @@ struct TerminalScreenView: View {
             .onAppear {
                 inputFocused = true
             }
-            .terminalFocusKeyHandler(input: $input, inputFocused: $inputFocused)
+            .terminalFocusKeyHandler(session: session, inputFocused: $inputFocused)
         }
     }
 }

@@ -1,7 +1,7 @@
 import SwiftUI
 
 struct TerminalFocusKeyHandler: ViewModifier {
-    @Binding var input: String
+    @ObservedObject var session: TerminalSession
     var inputFocused: FocusState<Bool>.Binding
 
     func body(content: Content) -> some View {
@@ -15,7 +15,7 @@ struct TerminalFocusKeyHandler: ViewModifier {
                 inputFocused.wrappedValue = true
 
                 if let char = keyPress.characters.first, !char.isNewline {
-                    input.append(char)
+                    session.inputDraft.append(char)
                 }
                 return .handled
             }
@@ -26,7 +26,7 @@ struct TerminalFocusKeyHandler: ViewModifier {
 }
 
 extension View {
-    func terminalFocusKeyHandler(input: Binding<String>, inputFocused: FocusState<Bool>.Binding) -> some View {
-        modifier(TerminalFocusKeyHandler(input: input, inputFocused: inputFocused))
+    func terminalFocusKeyHandler(session: TerminalSession, inputFocused: FocusState<Bool>.Binding) -> some View {
+        modifier(TerminalFocusKeyHandler(session: session, inputFocused: inputFocused))
     }
 }

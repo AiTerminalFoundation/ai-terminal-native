@@ -7,6 +7,7 @@ final class TerminalSession: ObservableObject {
 
     @Published var output: String = ""
     @Published var currentPrompt: String = ""
+    @Published var inputDraft: String = ""
     private var master_fd: Int32 = -1
     private var slave_fd: Int32 = -1
     private var session_id_c_string: UnsafeMutablePointer<CChar>? = nil
@@ -60,7 +61,7 @@ final class TerminalSession: ObservableObject {
                 stop()
                 return
             }
-                        
+
             // Keep the session alive until the read loop exits so closing a tab cannot
             // leave C callbacks pointing at a deallocated Swift object.
             let context = Unmanaged.passRetained(self).toOpaque()
@@ -137,6 +138,18 @@ final class TerminalSession: ObservableObject {
         currentPrompt = prompt.trimmingCharacters(in: .whitespacesAndNewlines)
     }
 
+    func submitInputDraft() {
+        let command = inputDraft
+        send_input_string(input: command + "\n")
+        inputDraft = ""
+    }
+
+    func submitInputDraftWithSuffix(_ suffix: String) {
+        let command = inputDraft + suffix
+        send_input_string(input: command)
+        inputDraft = ""
+    }
+
     private func resetSessionState() {
         resetDescriptors()
         session_id_c_string = nil
@@ -144,6 +157,7 @@ final class TerminalSession: ObservableObject {
         isRunning = false
         isClosed = false
         currentPrompt = ""
+        inputDraft = ""
     }
 
     private func resetDescriptors() {
