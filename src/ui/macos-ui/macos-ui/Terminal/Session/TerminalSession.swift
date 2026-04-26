@@ -2,11 +2,10 @@ import Foundation
 internal import Combine
 
 final class TerminalSession: ObservableObject {
-    // Removes common ANSI escape sequences so the Swift text view shows plain terminal output.
-    private static let ansiPattern = #"\x1B(\[[0-9;?]*[A-Za-z]|\][^\x07]*\x07|[()][AB])"#
+    @Published private(set) var renderSnapshot: TerminalRenderSnapshot = .empty
 
-    @Published var output: String = ""
-    @Published var currentPrompt: String = ""
+    private var screenBuffer = TerminalScreenBuffer()
+    private var parser = TerminalParser()
     private var master_fd: Int32 = -1
     private var slave_fd: Int32 = -1
     private var session_id_c_string: UnsafeMutablePointer<CChar>? = nil
@@ -22,14 +21,9 @@ final class TerminalSession: ObservableObject {
         
         if let buffer = buffer, nBytes > 0 {
             let data = Data(bytes: buffer, count: nBytes)
-            
-            if let chunk = String(data: data, encoding: .utf8) ?? String(data: data, encoding: .ascii) {
-                DispatchQueue.main.async {
-                    let cleaned = chunk
-                        .replacingOccurrences(of: ansiPattern, with: "", options: .regularExpression)
 
-                    instance.appendOutput(cleaned)
-                }
+            DispatchQueue.main.async {
+                instance.processOutput(data)
             }
         }
     }
@@ -56,11 +50,11 @@ final class TerminalSession: ObservableObject {
             let forkResult = fork_and_exec_shell(master_fd, slave_fd)
             
             if forkResult < 0 {
-                output = "SHELL FAILED TO START"
+                processOutput(Data("SHELL FAILED TO START".utf8))
                 stop()
                 return
             }
-                        
+
             // Keep the session alive until the read loop exits so closing a tab cannot
             // leave C callbacks pointing at a deallocated Swift object.
             let context = Unmanaged.passRetained(self).toOpaque()
@@ -76,7 +70,7 @@ final class TerminalSession: ObservableObject {
             
         } else {
             DispatchQueue.main.async {
-                self.output = "PTY FAILED"
+                self.processOutput(Data("PTY FAILED".utf8))
             }
         }
     }
@@ -129,21 +123,20 @@ final class TerminalSession: ObservableObject {
         stop()
     }
 
-    func appendOutput(_ text: String) {
-        output += text
-    }
-
-    func updatePrompt(_ prompt: String) {
-        currentPrompt = prompt.trimmingCharacters(in: .whitespacesAndNewlines)
+    private func processOutput(_ data: Data) {
+        parser.parse(data, into: &screenBuffer)
+        renderSnapshot = screenBuffer.snapshot
     }
 
     private func resetSessionState() {
         resetDescriptors()
+        screenBuffer.reset()
+        parser.reset()
+        renderSnapshot = screenBuffer.snapshot
         session_id_c_string = nil
         session_id = ""
         isRunning = false
         isClosed = false
-        currentPrompt = ""
     }
 
     private func resetDescriptors() {

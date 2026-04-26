@@ -15,17 +15,9 @@ struct TerminalTabItemView: View {
         _session = ObservedObject(wrappedValue: tab.session)
     }
 
-    private var title: String {
-        let prompt = session.currentPrompt.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !prompt.isEmpty else { return tab.baseTitle }
-
-        let lastPathComponent = URL(fileURLWithPath: prompt).lastPathComponent
-        return lastPathComponent.isEmpty ? prompt : lastPathComponent
-    }
-
     var body: some View {
         HStack(spacing: 8) {
-            Text(title)
+            Text(tab.baseTitle)
                 .lineLimit(1)
                 .foregroundStyle(isSelected ? Color.primary : Color.secondary)
 

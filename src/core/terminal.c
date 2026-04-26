@@ -21,6 +21,8 @@
 int create_pseudoterminal(int *master_file_descriptor, int *slave_file_descriptor, char **session_id);
 int fork_and_exec_shell(int master_file_descriptor, int slave_file_descriptor);
 const char * get_default_shell(void);
+const char * get_shell_name(const char *shell_path);
+void configure_shell_prompt(const char *shell_name);
 ssize_t send_input(char *command, int master_file_descriptor, size_t command_n_bytes);
 void read_loop(int master_file_descriptor, void (*on_output)(const char *buffer, ssize_t n_bytes_read, void *context), void *context);
 void close_terminal_session(int master_file_descriptor);
@@ -92,15 +94,17 @@ int fork_and_exec_shell(int master_file_descriptor, int slave_file_descriptor) {
         // call exec() to start the terminal oriented program that is to be connected
         // to the pseudoterminal slave
         const char *default_shell = get_default_shell();
-        
-        // \x01 and \x02 are SOH/STX control characters, invisible and never appear in normal output
-        setenv("PS1", "\x01__PROMPT__:$(whoami)@$(pwd)\x02 ", 1);
-        setenv("PROMPT", "\x01__PROMPT__:$(whoami)@$(pwd)\x02 ", 1);
-        
-        unsetenv("PS1");
+        const char *shell_name = get_shell_name(default_shell);
 
-        //-f doesn't load startup files, useful for now to manage prompt patterns
-        execlp(default_shell, default_shell, "-f", "-o", "promptsubst", NULL);
+        configure_shell_prompt(shell_name);
+
+        if (strcmp(shell_name, "zsh") == 0) {
+            execlp(default_shell, default_shell, "-f", NULL);
+        } else if (strcmp(shell_name, "bash") == 0) {
+            execlp(default_shell, default_shell, "--noprofile", "--norc", "-i", NULL);
+        } else {
+            execlp(default_shell, default_shell, "-i", NULL);
+        }
         _exit(127);
     } else {
         if (logger != NULL) {
@@ -118,6 +122,27 @@ const char * get_default_shell(void) {
     const char *shell = getenv("SHELL");
 
     return shell ? shell : "/bin/sh";
+}
+
+const char * get_shell_name(const char *shell_path) {
+    const char *shell_name = strrchr(shell_path, '/');
+
+    return shell_name ? shell_name + 1 : shell_path;
+}
+
+void configure_shell_prompt(const char *shell_name) {
+    setenv("TERM", "xterm-256color", 1);
+    setenv("COLORTERM", "truecolor", 1);
+
+    if (strcmp(shell_name, "zsh") == 0) {
+        setenv("PS1", "%n@%~ ", 1);
+        setenv("PROMPT", "%n@%~ ", 1);
+        setenv("PROMPT_EOL_MARK", "", 1);
+    } else if (strcmp(shell_name, "bash") == 0) {
+        setenv("PS1", "\\u@\\w ", 1);
+    } else {
+        setenv("PS1", "$USER:$PWD ", 1);
+    }
 }
 
 /*
