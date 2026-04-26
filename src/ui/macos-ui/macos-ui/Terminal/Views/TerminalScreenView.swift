@@ -39,10 +39,6 @@ struct TerminalScreenView: View {
             .onTapGesture {
                 terminalFocused = true
             }
-            .overlay(alignment: .topTrailing) {
-                FPSCounterView()
-                    .padding(8)
-            }
             .task {
                 while !Task.isCancelled {
                     try? await Task.sleep(for: .milliseconds(550))

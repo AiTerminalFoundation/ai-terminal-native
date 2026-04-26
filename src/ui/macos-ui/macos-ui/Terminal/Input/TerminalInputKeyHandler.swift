@@ -17,14 +17,27 @@ struct TerminalInputKeyHandler: ViewModifier {
     private func terminalInput(for keyPress: KeyPress) -> String? {
         let modifiers = keyPress.modifiers
 
-        // Keep app/menu shortcuts available to SwiftUI and AppKit.
-        guard !modifiers.contains(.command) else { return nil }
-
-        if modifiers.contains(.control),
-           let controlInput = controlInput(for: keyPress) {
-            return controlInput
+        if modifiers.contains(.control) {
+            if let controlInput = controlInput(for: keyPress) {
+                return controlInput
+            }
+        } else if modifiers.contains(.command) {
+            if let commandInput = commandInput(for: keyPress) {
+                return commandInput
+            }
+            return nil
+        } else if modifiers.contains(.option) {
+            if let optionInput = optionInput(for: keyPress) {
+                return optionInput
+            }
         }
 
+        // this isn't inside an else branch because if one of the modifiers doesn't recognise the combo,
+        //then it will return nil, instead of falling back on normal key handling
+        return normalKeyInput(for: keyPress)
+    }
+
+    private func normalKeyInput(for keyPress: KeyPress) -> String? {
         switch keyPress.key {
         case .return:
             return "\r"
@@ -57,27 +70,58 @@ struct TerminalInputKeyHandler: ViewModifier {
         }
     }
 
+    private func commandInput(for keyPress: KeyPress) -> String? {
+        if isDelete(keyPress) {
+            // Command-Delete mirrors Ctrl-U: kill from cursor to start of line.
+            return "\u{15}"
+        }
+
+        return nil
+    }
+
+    private func optionInput(for keyPress: KeyPress) -> String? {
+        if isDelete(keyPress) {
+            // Option-Delete mirrors Ctrl-W: delete the previous word.
+            return "\u{17}"
+        }
+
+        return nil
+    }
+
+    private func isDelete(_ keyPress: KeyPress) -> Bool {
+        keyPress.key == .delete || keyPress.characters.unicodeScalars.first?.value == 127
+    }
+
     private func controlInput(for keyPress: KeyPress) -> String? {
         guard let scalar = keyPress.characters.lowercased().unicodeScalars.first else {
             return nil
         }
 
+        // Map Control-modified ASCII keys to the C0 control codes terminals expect.
         switch scalar.value {
         case 64:
+            // Ctrl-@ sends NUL.
             return "\u{00}"
         case 65...90:
+            // Ctrl-A through Ctrl-Z send SOH through SUB.
             return String(UnicodeScalar(scalar.value - 64)!)
         case 97...122:
+            // Lowercase letters produce the same control codes as uppercase letters.
             return String(UnicodeScalar(scalar.value - 96)!)
         case 91:
+            // Ctrl-[ is Escape.
             return "\u{1B}"
         case 92:
+            // Ctrl-\ is File Separator.
             return "\u{1C}"
         case 93:
+            // Ctrl-] is Group Separator.
             return "\u{1D}"
         case 94:
+            // Ctrl-^ is Record Separator.
             return "\u{1E}"
         case 95:
+            // Ctrl-_ is Unit Separator.
             return "\u{1F}"
         default:
             return nil
