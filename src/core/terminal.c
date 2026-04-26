@@ -131,6 +131,9 @@ const char * get_shell_name(const char *shell_path) {
 }
 
 void configure_shell_prompt(const char *shell_name) {
+    setenv("TERM", "xterm-256color", 1);
+    setenv("COLORTERM", "truecolor", 1);
+
     if (strcmp(shell_name, "zsh") == 0) {
         setenv("PS1", "%n@%~ ", 1);
         setenv("PROMPT", "%n@%~ ", 1);

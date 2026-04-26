@@ -2,32 +2,53 @@ import SwiftUI
 
 struct TerminalScreenView: View {
     @ObservedObject var session: TerminalSession
-    @FocusState private var inputFocused: Bool
+    @FocusState private var terminalFocused: Bool
+    @State private var cursorVisible = true
+
+    private var renderedOutput: String {
+        session.renderSnapshot.renderedText(showCursor: terminalFocused && cursorVisible)
+    }
 
     var body: some View {
         ScrollViewReader { proxy in
             ScrollView {
                 VStack(alignment: .leading) {
-                    Text(session.output)
+                    Text(renderedOutput)
+                        .font(.system(size: 13, design: .monospaced))
+                        .lineSpacing(0)
                         .frame(maxWidth: .infinity, alignment: .leading)
                         .textSelection(.enabled)
-                        .padding(.horizontal, 5)
-
-                    TerminalInputRowView(session: session, inputFocused: $inputFocused)
                         .padding(.horizontal, 5)
 
                     Color.clear
                         .frame(height: 1)
                         .id("bottom")
                 }
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .contentShape(Rectangle())
             }
-            .onChange(of: session.output) {
+            .focusable()
+            .focused($terminalFocused)
+            .terminalInputKeyHandler(session: session)
+            .onChange(of: session.renderSnapshot) {
                 proxy.scrollTo("bottom")
             }
             .onAppear {
-                inputFocused = true
+                terminalFocused = true
             }
-            .terminalFocusKeyHandler(session: session, inputFocused: $inputFocused)
+            .onTapGesture {
+                terminalFocused = true
+            }
+            .overlay(alignment: .topTrailing) {
+                FPSCounterView()
+                    .padding(8)
+            }
+            .task {
+                while !Task.isCancelled {
+                    try? await Task.sleep(for: .milliseconds(550))
+                    cursorVisible.toggle()
+                }
+            }
         }
     }
 }
