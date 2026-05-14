@@ -74,6 +74,12 @@ struct TerminalInputKeyHandler: ViewModifier {
         if isDelete(keyPress) {
             // Command-Delete mirrors Ctrl-U: kill from cursor to start of line.
             return "\u{15}"
+        } else if keyPress.key.character.uppercased() == "V" { // cmd + V to paste
+            if let pastedText = NSPasteboard.general.string(forType: .string) {
+                let wrapped = "\u{1B}[200~" + pastedText + "\u{1B}[201~" //wrapping to avoid sending the pasted command directly
+                  return wrapped
+            }
+            return nil
         }
 
         return nil
