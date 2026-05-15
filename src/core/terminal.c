@@ -96,15 +96,10 @@ int fork_and_exec_shell(int master_file_descriptor, int slave_file_descriptor) {
         const char *default_shell = get_default_shell();
         const char *shell_name = get_shell_name(default_shell);
 
-        configure_shell_prompt(shell_name);
+        char login_shell_name[256];
+        snprintf(login_shell_name, sizeof(login_shell_name), "-%s", shell_name);
+        execlp(default_shell, login_shell_name, NULL);
 
-        if (strcmp(shell_name, "zsh") == 0) {
-            execlp(default_shell, default_shell, "-f", NULL);
-        } else if (strcmp(shell_name, "bash") == 0) {
-            execlp(default_shell, default_shell, "--noprofile", "--norc", "-i", NULL);
-        } else {
-            execlp(default_shell, default_shell, "-i", NULL);
-        }
         _exit(127);
     } else {
         if (logger != NULL) {
