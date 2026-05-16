@@ -89,7 +89,7 @@ final class TerminalSession: ObservableObject {
             var bytesSent = 0
 
             while bytesSent < inputLength {
-                let result = send_input(
+                let result = write_bytes(
                     UnsafeMutablePointer(mutating: baseAddress.advanced(by: bytesSent)),
                     master_fd,
                     inputLength - bytesSent
