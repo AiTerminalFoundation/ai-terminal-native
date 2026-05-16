@@ -10,6 +10,7 @@
 #include "logger.h"
 #include "utils.h"
 #include <stdlib.h>
+#include <stdio.h>
 #include <errno.h>
 #include <string.h>
 #include <sys/ioctl.h>
