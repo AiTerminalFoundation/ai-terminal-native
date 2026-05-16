@@ -1,4 +1,4 @@
-#include "terminal.h"
+#include "pty_session.h"
 #include "utils.h"
 #include <stdio.h>
 #include <unistd.h>

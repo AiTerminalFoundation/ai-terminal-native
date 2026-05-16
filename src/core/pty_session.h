@@ -1,5 +1,5 @@
-#ifndef terminal_h
-#define terminal_h
+#ifndef pty_session_h
+#define pty_session_h
 
 #include <unistd.h>
 

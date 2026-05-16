@@ -6,7 +6,7 @@
 #endif
 
 
-#include "terminal.h"
+#include "pty_session.h"
 #include "logger.h"
 #include "utils.h"
 #include <stdlib.h>
