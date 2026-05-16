@@ -22,7 +22,7 @@ int create_pseudoterminal(int *master_file_descriptor, int *slave_file_descripto
 int fork_and_exec_shell(int master_file_descriptor, int slave_file_descriptor);
 const char * get_default_shell(void);
 const char * get_shell_name(const char *shell_path);
-void configure_shell_prompt(const char *shell_name);
+void configure_and_exec_shell(void);
 ssize_t send_input(char *command, int master_file_descriptor, size_t command_n_bytes);
 void read_loop(int master_file_descriptor, void (*on_output)(const char *buffer, ssize_t n_bytes_read, void *context), void *context);
 void close_terminal_session(int master_file_descriptor);
@@ -86,20 +86,11 @@ int fork_and_exec_shell(int master_file_descriptor, int slave_file_descriptor) {
         dup2(slave_file_descriptor, STDIN_FILENO);
         dup2(slave_file_descriptor, STDOUT_FILENO);
         dup2(slave_file_descriptor, STDERR_FILENO);
-        
 
         close(master_file_descriptor);
         close(slave_file_descriptor);
 
-        // call exec() to start the terminal oriented program that is to be connected
-        // to the pseudoterminal slave
-        const char *default_shell = get_default_shell();
-        const char *shell_name = get_shell_name(default_shell);
-
-        char login_shell_name[256];
-        snprintf(login_shell_name, sizeof(login_shell_name), "-%s", shell_name);
-        execlp(default_shell, login_shell_name, NULL);
-
+        configure_and_exec_shell();
         _exit(127);
     } else {
         if (logger != NULL) {
@@ -115,29 +106,24 @@ int fork_and_exec_shell(int master_file_descriptor, int slave_file_descriptor) {
 
 const char * get_default_shell(void) {
     const char *shell = getenv("SHELL");
-
     return shell ? shell : "/bin/sh";
 }
 
 const char * get_shell_name(const char *shell_path) {
     const char *shell_name = strrchr(shell_path, '/');
-
     return shell_name ? shell_name + 1 : shell_path;
 }
 
-void configure_shell_prompt(const char *shell_name) {
+void configure_and_exec_shell(void) {
+    const char *default_shell = get_default_shell();
+    const char *shell_name = get_shell_name(default_shell);
+    char login_shell_name[256];
+
     setenv("TERM", "xterm-256color", 1);
     setenv("COLORTERM", "truecolor", 1);
 
-    if (strcmp(shell_name, "zsh") == 0) {
-        setenv("PS1", "%n@%~ ", 1);
-        setenv("PROMPT", "%n@%~ ", 1);
-        setenv("PROMPT_EOL_MARK", "", 1);
-    } else if (strcmp(shell_name, "bash") == 0) {
-        setenv("PS1", "\\u@\\w ", 1);
-    } else {
-        setenv("PS1", "$USER:$PWD ", 1);
-    }
+    snprintf(login_shell_name, sizeof(login_shell_name), "-%s", shell_name);
+    execlp(default_shell, login_shell_name, NULL);
 }
 
 /*
