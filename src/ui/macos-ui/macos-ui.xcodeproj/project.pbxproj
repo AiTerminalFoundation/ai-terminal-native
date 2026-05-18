@@ -8,17 +8,22 @@
 
 /* Begin PBXBuildFile section */
 		FB2E4F312FEBC0A600A1B2C3 /* logger.c in Sources */ = {isa = PBXBuildFile; fileRef = FB2E4F302FEBC0A600A1B2C3 /* logger.c */; };
-		FBB7AE212F4B3E7E00354FFC /* terminal.c in Sources */ = {isa = PBXBuildFile; fileRef = FBB7AE1F2F4B3E7E00354FFC /* terminal.c */; };
+		FB8272C22FB899AF0016589F /* pty_session.c in Sources */ = {isa = PBXBuildFile; fileRef = FB8272C12FB899AF0016589F /* pty_session.c */; };
+		FB8272C52FB8E65C0016589F /* read_write.c in Sources */ = {isa = PBXBuildFile; fileRef = FB8272C42FB8E65C0016589F /* read_write.c */; };
+		FB8272C82FB8EA6F0016589F /* signals.c in Sources */ = {isa = PBXBuildFile; fileRef = FB8272C72FB8EA6F0016589F /* signals.c */; };
 		FBC163A52F5DEC12004FDC91 /* utils.c in Sources */ = {isa = PBXBuildFile; fileRef = FBC163A42F5DEC12004FDC91 /* utils.c */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXFileReference section */
 		FB2E4F2F2FEBC0A600A1B2C3 /* logger.h */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.h; path = logger.h; sourceTree = "<group>"; };
 		FB2E4F302FEBC0A600A1B2C3 /* logger.c */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.c; path = logger.c; sourceTree = "<group>"; };
+		FB8272C02FB899AF0016589F /* pty_session.h */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.h; path = pty_session.h; sourceTree = "<group>"; };
+		FB8272C12FB899AF0016589F /* pty_session.c */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.c; path = pty_session.c; sourceTree = "<group>"; };
+		FB8272C32FB8E65C0016589F /* read_write.h */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.h; path = read_write.h; sourceTree = "<group>"; };
+		FB8272C42FB8E65C0016589F /* read_write.c */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.c; path = read_write.c; sourceTree = "<group>"; };
+		FB8272C62FB8EA6F0016589F /* signals.h */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.h; path = signals.h; sourceTree = "<group>"; };
+		FB8272C72FB8EA6F0016589F /* signals.c */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.c; path = signals.c; sourceTree = "<group>"; };
 		FBB7AE002F4B339200354FFC /* macos-ui.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = "macos-ui.app"; sourceTree = BUILT_PRODUCTS_DIR; };
-		FBB7AE1D2F4B3E7E00354FFC /* main.c */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.c; path = main.c; sourceTree = "<group>"; };
-		FBB7AE1E2F4B3E7E00354FFC /* terminal.h */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.h; path = terminal.h; sourceTree = "<group>"; };
-		FBB7AE1F2F4B3E7E00354FFC /* terminal.c */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.c; path = terminal.c; sourceTree = "<group>"; };
 		FBC163A32F5DEC12004FDC91 /* utils.h */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.h; path = utils.h; sourceTree = "<group>"; };
 		FBC163A42F5DEC12004FDC91 /* utils.c */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.c; path = utils.c; sourceTree = "<group>"; };
 /* End PBXFileReference section */
@@ -75,11 +80,14 @@
 		FBB7AE202F4B3E7E00354FFC /* core */ = {
 			isa = PBXGroup;
 			children = (
-				FBB7AE1D2F4B3E7E00354FFC /* main.c */,
+				FB8272C62FB8EA6F0016589F /* signals.h */,
+				FB8272C72FB8EA6F0016589F /* signals.c */,
+				FB8272C32FB8E65C0016589F /* read_write.h */,
+				FB8272C42FB8E65C0016589F /* read_write.c */,
+				FB8272C02FB899AF0016589F /* pty_session.h */,
+				FB8272C12FB899AF0016589F /* pty_session.c */,
 				FB2E4F2F2FEBC0A600A1B2C3 /* logger.h */,
 				FB2E4F302FEBC0A600A1B2C3 /* logger.c */,
-				FBB7AE1E2F4B3E7E00354FFC /* terminal.h */,
-				FBB7AE1F2F4B3E7E00354FFC /* terminal.c */,
 				FBC163A32F5DEC12004FDC91 /* utils.h */,
 				FBC163A42F5DEC12004FDC91 /* utils.c */,
 			);
@@ -162,8 +170,10 @@
 			buildActionMask = 2147483647;
 			files = (
 				FB2E4F312FEBC0A600A1B2C3 /* logger.c in Sources */,
+				FB8272C82FB8EA6F0016589F /* signals.c in Sources */,
+				FB8272C52FB8E65C0016589F /* read_write.c in Sources */,
+				FB8272C22FB899AF0016589F /* pty_session.c in Sources */,
 				FBC163A52F5DEC12004FDC91 /* utils.c in Sources */,
-				FBB7AE212F4B3E7E00354FFC /* terminal.c in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
