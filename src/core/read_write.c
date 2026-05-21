@@ -27,6 +27,11 @@ ssize_t write_bytes(char *bytes, int master_file_descriptor, size_t n_bytes) {
 /*
  * Reading the STDOUT connected to the slave connected to the given master
  */
+// the on_output is going to change, it will basically send a grid, and each entry a[m][n] of the matrix will have what is going to change, so for instance if we have a matrix of 
+// mxn (let's say 1092x728) and we reduce the window size we will send a new matrix of new_m x new_n with in each of the matrix[i][j] the new chars. so then swiftui should just render a matrix.
+// to get the window_size we get it from termios (already implementd in the main one)
+// we will need something to parse escape sequences in real characters (it's going to be a big switch?)
+// how do we send the cursor position? we are going to send an entire struct to the screen that will be build with (int cursor_i = x, int cursor_j, int cursor_type(i want to be able to render a normal text editor like cursor, char[][] screen) we will send already parsed sequences
 void read_loop(int master_file_descriptor, void (*on_output)(const char *buffer, ssize_t n_bytes_read, void *context), void *context) {
     char buffer[BUFFER_SIZE];
     terminal_logger *logger = terminal_logger_find(master_file_descriptor);
@@ -53,7 +58,12 @@ void read_loop(int master_file_descriptor, void (*on_output)(const char *buffer,
             if (logger != NULL) {
                 terminal_logger_log(logger, "INFO", "OUTPUT", buffer, (size_t)n_bytes_read);
             }
-            on_output(buffer, n_bytes_read, context);
+
+            //parse the data we get inside a state machine
+            //render the screen - we send to the ui only the diffs (so the parts of the screen to change/add)
+            //
+
+            on_output(buffer, n_bytes_read, context); //this is going to change
         }
     }
 
