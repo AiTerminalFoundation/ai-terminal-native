@@ -3,6 +3,7 @@
 #include <unistd.h>
 #include <signal.h>
 #include <termios.h>
+#include <sys/ioctl.h>
 
 int get_terminal_window_size(int master_file_descriptor, struct winsize *window_size);
 int set_terminal_window_size(int master_file_descriptor, struct winsize window_size);
