@@ -17,7 +17,7 @@ int set_terminal_window_size(int master_file_descriptor, struct winsize window_s
  */
 
 int get_terminal_window_size(int master_file_descriptor, struct winsize *window_size) {
-    return ioctl(STDIN_FILENO, TIOCGWINSZ, window_size);
+    return ioctl(master_file_descriptor, TIOCGWINSZ, window_size);
 }
 
 /* 
@@ -28,5 +28,5 @@ int get_terminal_window_size(int master_file_descriptor, struct winsize *window_
  * cols = x pixels / character width
  */
 int set_terminal_window_size(int master_file_descriptor, struct winsize window_size) {
-    return ioctl(master_file_descriptor, TIOCSWINSZ, window_size);
+    return ioctl(master_file_descriptor, TIOCSWINSZ, &window_size);
 }
