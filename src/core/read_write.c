@@ -7,10 +7,38 @@
 
 
 #define BUFFER_SIZE 4096
+static TerminalState terminal_state = GROUND;
+
+typedef enum {
+    ACTION_PRINT,
+    ACTION_CARRIAGE_RETURN,
+    ACTION_LINE_FEED,
+    ACTION_BACKSPACE,
+    ACTION_SET_GRAPHICS,
+    ACTION_CURSOR_UP,
+    ACTION_CLEAR_LINE,
+    ACTION_SET_MODE,
+    ACTION_OSC_TITLE,
+    ACTION_IGNORE
+} TerminalActionType;
+
+typedef enum {
+    GROUND,                       /* normal printing output state */
+    ESCAPE,                       /* an escape sequence is started */
+    CONSTROL_SEQUENCE_INTRODUCER, /* the start of a an escape sequence = [ */
+    OPERATING_SYSTEM_COMMAND      /* useful for tab renaming, hyperlink = ] */
+} TerminalState;                  /* Actually there are other states to handle but for a minimal working version is enough */
+
+typedef enum {
+    ESC_CHAR = 0x1b,                          /* ] = 1b exa, 27 dec on ascii */
+    CONTROL_SEQUENCE_INTRODUCER_CHAR = 0x5b,  /* ] = 5b exa, 93 dec on ascii */
+    OPERATING_SYSTEM_COMMAND_CHAR = 0x5d      /* ] = 5d exa, 91 dec on ascii */
+} ASCII;
 
 
 ssize_t write_bytes(char *bytes, int master_file_descriptor, size_t n_bytes);
 void read_loop(int master_file_descriptor, void (*on_output)(const char *buffer, ssize_t n_bytes_read, void *context), void *context);
+ 
 
 /*
  * Send input to the master_fd that sends it to the slave, and the slave shell elaborates
@@ -24,6 +52,7 @@ ssize_t write_bytes(char *bytes, int master_file_descriptor, size_t n_bytes) {
     return write(master_file_descriptor, bytes, n_bytes);
 }
 
+
 /*
  * Reading the STDOUT connected to the slave connected to the given master
  */
@@ -34,9 +63,13 @@ ssize_t write_bytes(char *bytes, int master_file_descriptor, size_t n_bytes) {
 // how do we send the cursor position? we are going to send an entire struct to the screen that will be build with (int cursor_i = x, int cursor_j, int cursor_type(i want to be able to render a normal text editor like cursor, char[][] screen) we will send already parsed sequences
 void read_loop(int master_file_descriptor, void (*on_output)(const char *buffer, ssize_t n_bytes_read, void *context), void *context) {
     char buffer[BUFFER_SIZE];
+
     terminal_logger *logger = terminal_logger_find(master_file_descriptor);
 
-    struct pollfd poll_file_descriptor = { .fd = master_file_descriptor, .events = POLLIN };
+    struct pollfd poll_file_descriptor = {
+        .fd = master_file_descriptor,
+        .events = POLLIN
+    };
 
     // we pass to poll() the fds to check and the event,
     // the number of the fds to check (in our case 1)
@@ -55,18 +88,25 @@ void read_loop(int master_file_descriptor, void (*on_output)(const char *buffer,
             // TODO: add a counter for the error to have some sort of reliability before exiting the loop
             if(n_bytes_read <= 0) break;
 
-            if (logger != NULL) {
+            if(logger != NULL) {
                 terminal_logger_log(logger, "INFO", "OUTPUT", buffer, (size_t)n_bytes_read);
             }
 
             //parse the data we get inside a state machine
-            //render the screen - we send to the ui only the diffs (so the parts of the screen to change/add)
-            //
+            for(int i = 0; i < n_bytes_read; i++) {
 
-            on_output(buffer, n_bytes_read, context); //this is going to change
+            }
         }
     }
 
     terminal_logger_close(master_file_descriptor, "SESSION_CLOSED");
 }
 
+/* Examples */
+/* \x1b[31mRed\x1b[0m World */
+
+void parse_escape_sequences(char c) {
+}
+
+
+void accept_parsed_squences(
