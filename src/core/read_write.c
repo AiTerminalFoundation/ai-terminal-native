@@ -4,9 +4,13 @@
 #include <poll.h>
 #include <stdio.h>
 #include <unistd.h>
+#include <stdint.h>
 
 
 #define BUFFER_SIZE 4096
+#define CSI_BUFFER_SIZE 128
+#define OSC_BUFFER_SIZE 1024
+
 
 typedef enum {
     ACTION_PRINT,
@@ -20,6 +24,22 @@ typedef enum {
     ACTION_OSC_TITLE,
     ACTION_IGNORE
 } TerminalActionType;
+
+typedef struct {
+    int row;
+    int column;
+} grid_position;
+
+typedef struct {
+    bool is_bold;
+} cell_properties;
+
+typedef struct {
+    bool is_empty_cell;
+    char character;
+    grid_position position;
+    cell_properties properties;
+} screen_cell;
 
 typedef enum {
     GROUND_STATE,                       /* normal printing output state */
@@ -36,10 +56,11 @@ typedef enum {
 
 
 static TerminalState terminal_state = GROUND_STATE;
+static cell_properties properties;
 
 ssize_t write_bytes(char *bytes, int master_file_descriptor, size_t n_bytes);
 void read_loop(int master_file_descriptor, void (*on_output)(const char *buffer, ssize_t n_bytes_read, void *context), void *context);
-void parse(char c);
+void parse(int master_fd, char c);
  
 
 /*
@@ -78,7 +99,7 @@ void read_loop(int master_file_descriptor, void (*on_output)(const char *buffer,
     // and the timeout, that we don't want, so -1 for us
     // if poll returns -1 there is an error, if 0 it means timeout
     // so we check for values > 0, that is the count of the fds that got some operation
-    // in our case we just have 1, so we could simplify to == 1, but i don't know if in the future i want
+    // in our caTse we just have 1, so we could simplify to == 1, but i don't know if in the future i want
     // to put more fds in this function
     while(poll(&poll_file_descriptor, 1, -1) > 0) {
         // we need to use bitwise AND with POLLIN, becasue there might be also the POLLHUP events (that means connection close) with some output
@@ -96,7 +117,7 @@ void read_loop(int master_file_descriptor, void (*on_output)(const char *buffer,
 
             //parse the data we get inside a state machine
             for(int i = 0; i < n_bytes_read; i++) {
-                parse(buffer[i]);
+                parse(master_file_descriptor, buffer[i]);
             }
         }
     }
@@ -107,14 +128,14 @@ void read_loop(int master_file_descriptor, void (*on_output)(const char *buffer,
 /* Examples */
 /* \x1b[31mRed\x1b[0m World */
 /* \r\x1B[0m\x1B[27m\x1B[24m\x1B[Jmicheleverriello@Micheles-MacBook-Pro / % \x1B[K\x1B[?2004h */
-
-void parse(char c) {
+void parse(int master_fd, uint8_t c) {
     switch(terminal_state) {
         case GROUND_STATE:
             if(c == ESC_ASCII) {
                 terminal_state = ESCAPE_STATE;
             } else {
-                // print the character with current options
+                terminal_action_type = ACTION_PRINT;
+                // what else here?
             }
             break;
         case ESCAPE_STATE:
@@ -126,7 +147,7 @@ void parse(char c) {
                     terminal_state = OPERATING_SYSTEM_COMMAND_STATE;
                     break;
                 default:
-                    // in the future other statesÒ
+                    terminal_state = GROUND_STATE;
                     break;
             }
             break;
@@ -151,5 +172,5 @@ void parse(char c) {
 }
 
 
-void accept_parsed_squences() {
+void to_screen_cell() {
 }
