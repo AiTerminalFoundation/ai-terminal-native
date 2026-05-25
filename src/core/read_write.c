@@ -7,7 +7,6 @@
 
 
 #define BUFFER_SIZE 4096
-static TerminalState terminal_state = GROUND;
 
 typedef enum {
     ACTION_PRINT,
@@ -23,21 +22,24 @@ typedef enum {
 } TerminalActionType;
 
 typedef enum {
-    GROUND,                       /* normal printing output state */
-    ESCAPE,                       /* an escape sequence is started */
-    CONSTROL_SEQUENCE_INTRODUCER, /* the start of a an escape sequence = [ */
-    OPERATING_SYSTEM_COMMAND      /* useful for tab renaming, hyperlink = ] */
+    GROUND_STATE,                       /* normal printing output state */
+    ESCAPE_STATE,                       /* an escape sequence is started */
+    CONTROL_SEQUENCE_INTRODUCER_STATE,  /* the start of a an escape sequence = [ */
+    OPERATING_SYSTEM_COMMAND_STATE      /* useful for tab renaming, hyperlink = ] */
 } TerminalState;                  /* Actually there are other states to handle but for a minimal working version is enough */
 
 typedef enum {
-    ESC_CHAR = 0x1b,                          /* ] = 1b exa, 27 dec on ascii */
-    CONTROL_SEQUENCE_INTRODUCER_CHAR = 0x5b,  /* ] = 5b exa, 93 dec on ascii */
-    OPERATING_SYSTEM_COMMAND_CHAR = 0x5d      /* ] = 5d exa, 91 dec on ascii */
+    ESC_ASCII = 0x1b,                          /* ESC = 1b exa, 27 dec on ascii */
+    CONTROL_SEQUENCE_INTRODUCER_ASCII = 0x5b,  /* [ = 5b exa, 93 dec on ascii */
+    OPERATING_SYSTEM_COMMAND_ASCII = 0x5d      /* ] = 5d exa, 91 dec on ascii */
 } ASCII;
 
 
+static TerminalState terminal_state = GROUND_STATE;
+
 ssize_t write_bytes(char *bytes, int master_file_descriptor, size_t n_bytes);
 void read_loop(int master_file_descriptor, void (*on_output)(const char *buffer, ssize_t n_bytes_read, void *context), void *context);
+void parse(char c);
  
 
 /*
@@ -94,7 +96,7 @@ void read_loop(int master_file_descriptor, void (*on_output)(const char *buffer,
 
             //parse the data we get inside a state machine
             for(int i = 0; i < n_bytes_read; i++) {
-
+                parse(buffer[i]);
             }
         }
     }
@@ -104,9 +106,50 @@ void read_loop(int master_file_descriptor, void (*on_output)(const char *buffer,
 
 /* Examples */
 /* \x1b[31mRed\x1b[0m World */
+/* \r\x1B[0m\x1B[27m\x1B[24m\x1B[Jmicheleverriello@Micheles-MacBook-Pro / % \x1B[K\x1B[?2004h */
 
-void parse_escape_sequences(char c) {
+void parse(char c) {
+    switch(terminal_state) {
+        case GROUND_STATE:
+            if(c == ESC_ASCII) {
+                terminal_state = ESCAPE_STATE;
+            } else {
+                // print the character with current options
+            }
+            break;
+        case ESCAPE_STATE:
+            switch (c) {
+                case CONTROL_SEQUENCE_INTRODUCER_ASCII:
+                    terminal_state = CONTROL_SEQUENCE_INTRODUCER_STATE;
+                    break;
+                case OPERATING_SYSTEM_COMMAND_ASCII:
+                    terminal_state = OPERATING_SYSTEM_COMMAND_STATE;
+                    break;
+                default:
+                    // in the future other statesÒ
+                    break;
+            }
+            break;
+        case CONTROL_SEQUENCE_INTRODUCER_STATE:
+            switch(c) {
+            case :
+            default: 
+                break;
+            }
+            break;
+        case OPERATING_SYSTEM_COMMAND_STATE:
+            switch(c) {
+                case :
+                default:
+                    break;
+            }
+            break;
+        default:
+            // the idea is that in the future we manage other escape sequences other than CSI and OSC
+            break;
+    }
 }
 
 
-void accept_parsed_squences(
+void accept_parsed_squences() {
+}
