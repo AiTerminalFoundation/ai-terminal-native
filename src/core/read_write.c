@@ -49,9 +49,10 @@ typedef enum {
 } TerminalState;                  /* Actually there are other states to handle but for a minimal working version is enough */
 
 typedef enum {
-    ESC_ASCII = 0x1b,                          /* ESC = 1b exa, 27 dec on ascii */
+    ESC_ASCII = 0x1b,
     CONTROL_SEQUENCE_INTRODUCER_ASCII = 0x5b,  /* [ = 5b exa, 93 dec on ascii */
     OPERATING_SYSTEM_COMMAND_ASCII = 0x5d      /* ] = 5d exa, 91 dec on ascii */
+    SEMICOLON_ASCII = 0x3b
 } ASCII;
 
 
@@ -152,18 +153,10 @@ void parse(int master_fd, uint8_t c) {
             }
             break;
         case CONTROL_SEQUENCE_INTRODUCER_STATE:
-            switch(c) {
-            case :
-            default: 
-                break;
-            }
+            parse_csi(c);
             break;
         case OPERATING_SYSTEM_COMMAND_STATE:
-            switch(c) {
-                case :
-                default:
-                    break;
-            }
+            parse_osc(c);
             break;
         default:
             // the idea is that in the future we manage other escape sequences other than CSI and OSC
@@ -171,6 +164,58 @@ void parse(int master_fd, uint8_t c) {
     }
 }
 
+/* will return -1 if the buffer overflows */
+/* CSI Sequences are ESC[ 1;2;3 A composed by params [0-9] divided by ; and a final byte in the range */
+/*
+ * params:        bytes 0x30..0x3F
+ * ntermediates: bytes 0x20..0x2F
+ * final:         byte 0x40..0x7E
+ */
+int parse_csi(uint8_t c) {
+    static unsigned int buffer_length = 0;
+    static uint8_t buffer[CSI_BUFFER_SIZE];
 
+    if (buffer_length == CSI_BUFFER_SIZE) {
+        clear_buffer(buffer, &buffer_length);
+        terminal_state = GROUND_STATE;
+        return -1; // we are going to buffer overflow, it's too much as length for CSI
+    }
+
+    if(is_final_csi_byte(c)) {
+        TerminalActionType terminal_action_type = evaluate_csi_sequence(buffer, buffer_length, c);
+        clear_buffer(buffer, &buffer.length);
+        terminal_state = GROUND_STATE;
+        return 0;
+    }
+
+    buffer[length] = c;
+    buffer_length++;
+
+    return 0;
+}
+
+TerminalActionType evaluate_csi_sequence(uint8_t buffer[], unsigned int buffer_length, uint8_t final_byte) {
+   
+}
+
+int s_final_csi_byte(uint8_t &byte) {
+    return *byte >= 0x40 && *byte <= 0x7E;
+}
+
+
+void clear_buffer(uint8_t *buffer, unsigned_int *length) {
+    for (int i = 0; i < *length; i++) buffer[i] = 0;
+    *length = 0;
+}
+
+
+/* will return -1 if the buffer overflows */
+int parse_osc(uint8_t c) {
+    
+}
+
+char to_utf8(uint8_t bytes[]) {
+
+}
 void to_screen_cell() {
 }
