@@ -56,8 +56,17 @@ typedef enum {
 } ASCII;
 
 
+struct {
+    uint8_t params[CSI_BUFFER_SIZE];
+    uint8_t params_len;
+    uint8_t intermediate_bytes[8]; // intermediate bytes are very rare usually 1 or 2, we will use 8 for safety, later we will remove all caps and use malloc
+    uint8_t intermediate_bytes_len;
+    uint8_t final_byte;
+} csi_sequence;
+
 static TerminalState terminal_state = GROUND_STATE;
 static cell_properties properties;
+static struct csi_sequence *csi_sequence_ptr = malloc(sizeof(struct csi_sequence));
 
 ssize_t write_bytes(char *bytes, int master_file_descriptor, size_t n_bytes);
 void read_loop(int master_file_descriptor, void (*on_output)(const char *buffer, ssize_t n_bytes_read, void *context), void *context);
@@ -141,7 +150,7 @@ void parse(int master_fd, uint8_t c) {
             break;
         case ESCAPE_STATE:
             switch (c) {
-                case CONTROL_SEQUENCE_INTRODUCER_ASCII:
+                case CONTROL_SEQUENCE_INTRODUCER_ASCII: // csi escape sequence starting, clearing the csi_sequence pointer
                     terminal_state = CONTROL_SEQUENCE_INTRODUCER_STATE;
                     break;
                 case OPERATING_SYSTEM_COMMAND_ASCII:
@@ -168,7 +177,7 @@ void parse(int master_fd, uint8_t c) {
 /* CSI Sequences are ESC[ 1;2;3 A composed by params [0-9] divided by ; and a final byte in the range */
 /*
  * params:        bytes 0x30..0x3F
- * ntermediates: bytes 0x20..0x2F
+ * intermediates: bytes 0x20..0x2F
  * final:         byte 0x40..0x7E
  */
 int parse_csi(uint8_t c) {
@@ -181,15 +190,21 @@ int parse_csi(uint8_t c) {
         return -1; // we are going to buffer overflow, it's too much as length for CSI
     }
 
-    if(is_final_csi_byte(c)) {
-        TerminalActionType terminal_action_type = evaluate_csi_sequence(buffer, buffer_length, c);
-        clear_buffer(buffer, &buffer.length);
+    if (byte >= 0x30 && byte <= 0x3F) { // param byte
+      // parameter byte
+      csi_sequence_ptr->params[csi_sequence_ptr->params_len] = byte;
+      csi_sequence_ptr->params_len++;
+    } else if (byte >= 0x20 && byte <= 0x2F) { // intermediate byte
+      csi_sequence_ptr->intermediate_bytes[csi_sequence_ptr->intermediate_bytes_len] = byte;
+      csi_sequence_ptr->intermediate_bytes_len++;
+    } else if (byte >= 0x40 && byte <= 0x7E) { // final byte
+        csi_sequence_ptr->final_byte = byte;
+        TerminalActionType terminal_action_type = evaluate_csi_sequence();
         terminal_state = GROUND_STATE;
-        return 0;
+        clear_csi_sequence();
+    } else {
+      // invalid CSI byte, skipping
     }
-
-    buffer[length] = c;
-    buffer_length++;
 
     return 0;
 }
@@ -198,10 +213,16 @@ TerminalActionType evaluate_csi_sequence(uint8_t buffer[], unsigned int buffer_l
    
 }
 
-int s_final_csi_byte(uint8_t &byte) {
-    return *byte >= 0x40 && *byte <= 0x7E;
+void clear_csi_sequence(void) {
+    clear_buffer(csi_sequence_ptr->params, CSI_BUFFER_SIZE);
+    csi_sequence_ptr->params_len = 0;
+    clear_buffer(csi_sequence_ptr->intermediate_bytes, 8); 
+    csi_sequence_ptrnter->intermediate_bytes_len = 0;
 }
 
+int is_final_csi_byte(uint8_t &byte) {
+    return *byte >= 0x40 && *byte <= 0x7E;
+}
 
 void clear_buffer(uint8_t *buffer, unsigned_int *length) {
     for (int i = 0; i < *length; i++) buffer[i] = 0;
