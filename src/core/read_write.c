@@ -5,7 +5,7 @@
 #include <stdio.h>
 #include <unistd.h>
 #include <stdint.h>
-
+#include <stdbool.h>
 
 #define BUFFER_SIZE 4096
 #define CSI_BUFFER_SIZE 128
@@ -51,27 +51,36 @@ typedef enum {
 typedef enum {
     ESC_ASCII = 0x1b,
     CONTROL_SEQUENCE_INTRODUCER_ASCII = 0x5b,  /* [ = 5b exa, 93 dec on ascii */
-    OPERATING_SYSTEM_COMMAND_ASCII = 0x5d      /* ] = 5d exa, 91 dec on ascii */
+    OPERATING_SYSTEM_COMMAND_ASCII = 0x5d,      /* ] = 5d exa, 91 dec on ascii */
     SEMICOLON_ASCII = 0x3b
 } ASCII;
 
 
-struct {
+struct csi_sequence {
     uint8_t params[CSI_BUFFER_SIZE];
-    uint8_t params_len;
+    int params_len;
     uint8_t intermediate_bytes[8]; // intermediate bytes are very rare usually 1 or 2, we will use 8 for safety, later we will remove all caps and use malloc
-    uint8_t intermediate_bytes_len;
+    int intermediate_bytes_len;
     uint8_t final_byte;
-} csi_sequence;
+};
+
 
 static TerminalState terminal_state = GROUND_STATE;
 static cell_properties properties;
-static struct csi_sequence *csi_sequence_ptr = malloc(sizeof(struct csi_sequence));
+static struct csi_sequence *csi_sequence_ptr = NULL;
+
 
 ssize_t write_bytes(char *bytes, int master_file_descriptor, size_t n_bytes);
 void read_loop(int master_file_descriptor, void (*on_output)(const char *buffer, ssize_t n_bytes_read, void *context), void *context);
-void parse(int master_fd, char c);
- 
+void clear_csi_sequence(void);
+int parse_csi(uint8_t c);
+void parse(int master_fd, uint8_t c);
+void clear_buffer(uint8_t *buffer, int *length);
+void parse_osc(uint8_t c);
+char to_utf8(uint8_t bytes[]);
+void to_screen_cell();
+void evaluate_csi_sequence(uint8_t buffer[], uint8_t buffer_length, uint8_t final_byte);
+
 
 /*
  * Send input to the master_fd that sends it to the slave, and the slave shell elaborates
@@ -98,6 +107,7 @@ void read_loop(int master_file_descriptor, void (*on_output)(const char *buffer,
     char buffer[BUFFER_SIZE];
 
     terminal_logger *logger = terminal_logger_find(master_file_descriptor);
+    csi_sequence_ptr = malloc(sizeof(struct csi_sequence));
 
     struct pollfd poll_file_descriptor = {
         .fd = master_file_descriptor,
@@ -181,7 +191,7 @@ void parse(int master_fd, uint8_t c) {
  * final:         byte 0x40..0x7E
  */
 int parse_csi(uint8_t c) {
-    static unsigned int buffer_length = 0;
+    static int buffer_length = 0;
     static uint8_t buffer[CSI_BUFFER_SIZE];
 
     if (buffer_length == CSI_BUFFER_SIZE) {
@@ -190,15 +200,15 @@ int parse_csi(uint8_t c) {
         return -1; // we are going to buffer overflow, it's too much as length for CSI
     }
 
-    if (byte >= 0x30 && byte <= 0x3F) { // param byte
+    if (c >= 0x30 && c <= 0x3F) { // param byte
       // parameter byte
-      csi_sequence_ptr->params[csi_sequence_ptr->params_len] = byte;
+      csi_sequence_ptr->params[csi_sequence_ptr->params_len] = c;
       csi_sequence_ptr->params_len++;
-    } else if (byte >= 0x20 && byte <= 0x2F) { // intermediate byte
-      csi_sequence_ptr->intermediate_bytes[csi_sequence_ptr->intermediate_bytes_len] = byte;
+    } else if (c >= 0x20 && c <= 0x2F) { // intermediate byte
+      csi_sequence_ptr->intermediate_bytes[csi_sequence_ptr->intermediate_bytes_len] = c;
       csi_sequence_ptr->intermediate_bytes_len++;
-    } else if (byte >= 0x40 && byte <= 0x7E) { // final byte
-        csi_sequence_ptr->final_byte = byte;
+    } else if (c >= 0x40 && c <= 0x7E) { // final byte
+        csi_sequence_ptr->final_byte = c;
         TerminalActionType terminal_action_type = evaluate_csi_sequence();
         terminal_state = GROUND_STATE;
         clear_csi_sequence();
@@ -209,34 +219,39 @@ int parse_csi(uint8_t c) {
     return 0;
 }
 
-TerminalActionType evaluate_csi_sequence(uint8_t buffer[], unsigned int buffer_length, uint8_t final_byte) {
+
+//TODO
+void evaluate_csi_sequence(uint8_t buffer[], uint8_t buffer_length, uint8_t final_byte) {
    
 }
 
+
 void clear_csi_sequence(void) {
-    clear_buffer(csi_sequence_ptr->params, CSI_BUFFER_SIZE);
-    csi_sequence_ptr->params_len = 0;
-    clear_buffer(csi_sequence_ptr->intermediate_bytes, 8); 
-    csi_sequence_ptrnter->intermediate_bytes_len = 0;
+    clear_buffer(csi_sequence_ptr->params, &csi_sequence_ptr->params_len);
+    clear_buffer(csi_sequence_ptr->intermediate_bytes, &csi_sequence_ptr->intermediate_bytes_len);
 }
 
-int is_final_csi_byte(uint8_t &byte) {
-    return *byte >= 0x40 && *byte <= 0x7E;
-}
-
-void clear_buffer(uint8_t *buffer, unsigned_int *length) {
+/* 
+ * Clearing buffer and it's length, once buffer is cleared len is zeroed
+ */
+void clear_buffer(uint8_t *buffer, int *length) {
     for (int i = 0; i < *length; i++) buffer[i] = 0;
     *length = 0;
 }
 
 
 /* will return -1 if the buffer overflows */
-int parse_osc(uint8_t c) {
-    
+//TODO
+void parse_osc(uint8_t c) {
 }
 
+
+//TODO
 char to_utf8(uint8_t bytes[]) {
-
+    return 0;
 }
+
+
+//TODO
 void to_screen_cell() {
 }
