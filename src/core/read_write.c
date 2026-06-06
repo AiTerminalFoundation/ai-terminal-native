@@ -6,9 +6,12 @@
 #include <unistd.h>
 #include <stdint.h>
 #include <stdbool.h>
+#include <limits.h>
 
 #define BUFFER_SIZE 4096
 #define CSI_BUFFER_SIZE 128
+#define CSI_INTERMEDIATE_BUFFER_SIZE 8
+#define CSI_MAX_PARAMS 16
 #define OSC_BUFFER_SIZE 1024
 
 
@@ -25,10 +28,60 @@ typedef enum {
     ACTION_IGNORE
 } TerminalActionType;
 
+/*
+ * Semantic actions produced after a complete CSI sequence is parsed.
+ * Parameters and private markers still need to be interpreted when the action
+ * is executed. For example, CSI ? 25 h and CSI ? 1049 h both map to SET_MODE.
+ */
+typedef enum {
+    CSI_ACTION_UNKNOWN = 0,
+
+    CSI_ACTION_SGR,                 /* m */
+    CSI_ACTION_CURSOR_POSITION,     /* H, f */
+    CSI_ACTION_CURSOR_COLUMN,       /* G */
+    CSI_ACTION_CURSOR_ROW,          /* d */
+
+    CSI_ACTION_CURSOR_UP,           /* A */
+    CSI_ACTION_CURSOR_DOWN,         /* B */
+    CSI_ACTION_CURSOR_RIGHT,        /* C */
+    CSI_ACTION_CURSOR_LEFT,         /* D */
+    CSI_ACTION_CURSOR_NEXT_LINE,    /* E */
+    CSI_ACTION_CURSOR_PREVIOUS_LINE,/* F */
+
+    CSI_ACTION_ERASE_DISPLAY,       /* J */
+    CSI_ACTION_ERASE_LINE,          /* K */
+    CSI_ACTION_ERASE_CHARACTERS,    /* X */
+
+    CSI_ACTION_INSERT_CHARACTERS,   /* @ */
+    CSI_ACTION_DELETE_CHARACTERS,   /* P */
+    CSI_ACTION_INSERT_LINES,        /* L */
+    CSI_ACTION_DELETE_LINES,        /* M */
+
+    CSI_ACTION_SCROLL_UP,           /* S */
+    CSI_ACTION_SCROLL_DOWN,         /* T */
+    CSI_ACTION_SET_SCROLL_REGION,   /* r */
+
+    CSI_ACTION_SET_MODE,            /* h */
+    CSI_ACTION_RESET_MODE,          /* l */
+    CSI_ACTION_SAVE_CURSOR,         /* s */
+    CSI_ACTION_RESTORE_CURSOR,      /* u */
+
+    CSI_ACTION_DEVICE_STATUS,       /* n */
+    CSI_ACTION_DEVICE_ATTRIBUTES,   /* c */
+    CSI_ACTION_SET_CURSOR_STYLE     /* SP q */
+} CsiAction;
+
 typedef struct {
     int row;
     int column;
 } grid_position;
+
+typedef struct {
+    CsiAction action;
+    int params[CSI_MAX_PARAMS];
+    size_t params_count;
+    uint8_t private_marker;
+} CsiCommand;
 
 typedef struct {
     bool is_bold;
@@ -50,8 +103,8 @@ typedef enum {
 
 typedef enum {
     ESC_ASCII = 0x1b,
-    CONTROL_SEQUENCE_INTRODUCER_ASCII = 0x5b,  /* [ = 5b exa, 93 dec on ascii */
-    OPERATING_SYSTEM_COMMAND_ASCII = 0x5d,      /* ] = 5d exa, 91 dec on ascii */
+    CONTROL_SEQUENCE_INTRODUCER_ASCII = 0x5b,  /* '[' = hex 5B, decimal 91 */
+    OPERATING_SYSTEM_COMMAND_ASCII = 0x5d,     /* ']' = hex 5D, decimal 93 */
     SEMICOLON_ASCII = 0x3b
 } ASCII;
 
@@ -59,7 +112,7 @@ typedef enum {
 struct csi_sequence {
     uint8_t params[CSI_BUFFER_SIZE];
     int params_len;
-    uint8_t intermediate_bytes[8]; // intermediate bytes are very rare usually 1 or 2, we will use 8 for safety, later we will remove all caps and use malloc
+    uint8_t intermediate_bytes[CSI_INTERMEDIATE_BUFFER_SIZE];
     int intermediate_bytes_len;
     uint8_t final_byte;
 };
@@ -67,7 +120,10 @@ struct csi_sequence {
 
 static TerminalState terminal_state = GROUND_STATE;
 static cell_properties current_properties;
-static struct csi_sequence *csi_sequence_ptr = NULL;
+static grid_position cursor_position = {.row = 0, .column = 0};
+static grid_position saved_cursor_position = {.row = 0, .column = 0};
+static struct csi_sequence csi_sequence;
+static struct csi_sequence *csi_sequence_ptr = &csi_sequence;
 
 
 ssize_t write_bytes(char *bytes, int master_file_descriptor, size_t n_bytes);
@@ -79,7 +135,12 @@ void clear_buffer(uint8_t *buffer, int *length);
 void parse_osc(uint8_t c);
 char to_utf8(uint8_t bytes[]);
 void to_screen_cell(TerminalActionType *terminalActionType);
-TerminalActionType * evaluate_csi_sequence(struct csi_sequence *csi_sequence_ptr);
+CsiCommand evaluate_csi_sequence(const struct csi_sequence *sequence);
+void execute_csi_command(const CsiCommand *command);
+bool parse_csi_parameters(const struct csi_sequence *sequence, CsiCommand *command);
+int csi_parameter(const CsiCommand *command, size_t index, int default_value);
+int add_clamped_to_int(int value, int amount);
+int subtract_clamped_to_zero(int value, int amount);
 
 
 /*
@@ -107,7 +168,10 @@ void read_loop(int master_file_descriptor, void (*on_output)(const char *buffer,
     char buffer[BUFFER_SIZE];
 
     terminal_logger *logger = terminal_logger_find(master_file_descriptor);
-    csi_sequence_ptr = malloc(sizeof(struct csi_sequence));
+    clear_csi_sequence();
+    terminal_state = GROUND_STATE;
+    cursor_position = (grid_position){.row = 0, .column = 0};
+    saved_cursor_position = cursor_position;
 
     struct pollfd poll_file_descriptor = {
         .fd = master_file_descriptor,
@@ -154,14 +218,15 @@ void parse(int master_fd, uint8_t c) {
             if(c == ESC_ASCII) {
                 terminal_state = ESCAPE_STATE;
             } else {
-                TerminalActionType *terminal_action_type = NULL;
-                *terminal_action_type = ACTION_PRINT;
+                TerminalActionType terminal_action_type = ACTION_PRINT;
+                (void)terminal_action_type;
                 // what else here?
             }
             break;
         case ESCAPE_STATE:
             switch (c) {
                 case CONTROL_SEQUENCE_INTRODUCER_ASCII: // csi escape sequence starting, clearing the csi_sequence pointer
+                    clear_csi_sequence();
                     terminal_state = CONTROL_SEQUENCE_INTRODUCER_STATE;
                     break;
                 case OPERATING_SYSTEM_COMMAND_ASCII:
@@ -192,44 +257,237 @@ void parse(int master_fd, uint8_t c) {
  * final:         byte 0x40..0x7E
  */
 int parse_csi(uint8_t c) {
-    static int buffer_length = 0;
-    static uint8_t buffer[CSI_BUFFER_SIZE];
-
-    if (buffer_length == CSI_BUFFER_SIZE) {
-        clear_buffer(buffer, &buffer_length);
-        terminal_state = GROUND_STATE;
-        return -1; // we are going to buffer overflow, it's too much as length for CSI
-    }
-
     if (c >= 0x30 && c <= 0x3F) { // param byte
-      // parameter byte
-      csi_sequence_ptr->params[csi_sequence_ptr->params_len] = c;
-      csi_sequence_ptr->params_len++;
+        if (csi_sequence_ptr->params_len >= CSI_BUFFER_SIZE) {
+            clear_csi_sequence();
+            terminal_state = GROUND_STATE;
+            return -1;
+        }
+
+        csi_sequence_ptr->params[csi_sequence_ptr->params_len] = c;
+        csi_sequence_ptr->params_len++;
     } else if (c >= 0x20 && c <= 0x2F) { // intermediate byte
-      csi_sequence_ptr->intermediate_bytes[csi_sequence_ptr->intermediate_bytes_len] = c;
-      csi_sequence_ptr->intermediate_bytes_len++;
+        if (csi_sequence_ptr->intermediate_bytes_len >= CSI_INTERMEDIATE_BUFFER_SIZE) {
+            clear_csi_sequence();
+            terminal_state = GROUND_STATE;
+            return -1;
+        }
+
+        csi_sequence_ptr->intermediate_bytes[csi_sequence_ptr->intermediate_bytes_len] = c;
+        csi_sequence_ptr->intermediate_bytes_len++;
     } else if (c >= 0x40 && c <= 0x7E) { // final byte
         csi_sequence_ptr->final_byte = c;
-        TerminalActionType *terminal_action_type = evaluate_csi_sequence(csi_sequence_ptr);
+        CsiCommand command = evaluate_csi_sequence(csi_sequence_ptr);
+        execute_csi_command(&command);
         terminal_state = GROUND_STATE;
         clear_csi_sequence();
     } else {
-      // invalid CSI byte, skipping
+        /* Cancel malformed sequences instead of remaining stuck in CSI state. */
+        clear_csi_sequence();
+        terminal_state = GROUND_STATE;
+        return -1;
     }
 
     return 0;
 }
 
 
-//TODO
-TerminalActionType * evaluate_csi_sequence(struct csi_sequence *csi_sequence_ptr) {
-   
+CsiCommand evaluate_csi_sequence(const struct csi_sequence *sequence) {
+    CsiCommand command = {
+        .action = CSI_ACTION_UNKNOWN,
+        .params_count = 0,
+        .private_marker = 0
+    };
+
+    switch (sequence->final_byte) {
+        case '@': command.action = CSI_ACTION_INSERT_CHARACTERS; break;
+        case 'A': command.action = CSI_ACTION_CURSOR_UP; break;
+        case 'B': command.action = CSI_ACTION_CURSOR_DOWN; break;
+        case 'C': command.action = CSI_ACTION_CURSOR_RIGHT; break;
+        case 'D': command.action = CSI_ACTION_CURSOR_LEFT; break;
+        case 'E': command.action = CSI_ACTION_CURSOR_NEXT_LINE; break;
+        case 'F': command.action = CSI_ACTION_CURSOR_PREVIOUS_LINE; break;
+        case 'G': command.action = CSI_ACTION_CURSOR_COLUMN; break;
+        case 'H':
+        case 'f': command.action = CSI_ACTION_CURSOR_POSITION; break;
+        case 'J': command.action = CSI_ACTION_ERASE_DISPLAY; break;
+        case 'K': command.action = CSI_ACTION_ERASE_LINE; break;
+        case 'L': command.action = CSI_ACTION_INSERT_LINES; break;
+        case 'M': command.action = CSI_ACTION_DELETE_LINES; break;
+        case 'P': command.action = CSI_ACTION_DELETE_CHARACTERS; break;
+        case 'S': command.action = CSI_ACTION_SCROLL_UP; break;
+        case 'T': command.action = CSI_ACTION_SCROLL_DOWN; break;
+        case 'X': command.action = CSI_ACTION_ERASE_CHARACTERS; break;
+        case 'c': command.action = CSI_ACTION_DEVICE_ATTRIBUTES; break;
+        case 'd': command.action = CSI_ACTION_CURSOR_ROW; break;
+        case 'h': command.action = CSI_ACTION_SET_MODE; break;
+        case 'l': command.action = CSI_ACTION_RESET_MODE; break;
+        case 'm': command.action = CSI_ACTION_SGR; break;
+        case 'n': command.action = CSI_ACTION_DEVICE_STATUS; break;
+        case 'r': command.action = CSI_ACTION_SET_SCROLL_REGION; break;
+        case 's': command.action = CSI_ACTION_SAVE_CURSOR; break;
+        case 'u': command.action = CSI_ACTION_RESTORE_CURSOR; break;
+        case 'q':
+            /* Cursor style is CSI Ps SP q; q alone can mean another command. */
+            if (sequence->intermediate_bytes_len == 1 &&
+                sequence->intermediate_bytes[0] == 0x20) {
+                command.action = CSI_ACTION_SET_CURSOR_STYLE;
+            }
+            break;
+        default:
+            break;
+    }
+
+    if (!parse_csi_parameters(sequence, &command)) {
+        command.action = CSI_ACTION_UNKNOWN;
+    }
+
+    return command;
+}
+
+
+bool parse_csi_parameters(const struct csi_sequence *sequence, CsiCommand *command) {
+    int value = 0;
+    bool has_digit = false;
+    int index = 0;
+
+    /*
+     * Bytes 0x3C..0x3F are private prefixes. Vim commonly uses '?' for
+     * cursor visibility and the alternate screen, for example CSI ? 1049 h.
+     */
+    if (sequence->params_len > 0 &&
+        sequence->params[0] >= 0x3C &&
+        sequence->params[0] <= 0x3F) {
+        command->private_marker = sequence->params[0];
+        index++;
+    }
+
+    if (index == sequence->params_len) {
+        return true;
+    }
+
+    for (; index < sequence->params_len; index++) {
+        uint8_t byte = sequence->params[index];
+
+        if (byte >= '0' && byte <= '9') {
+            int digit = byte - '0';
+            if (value > (INT_MAX - digit) / 10) {
+                return false;
+            }
+
+            value = value * 10 + digit;
+            has_digit = true;
+        } else if (byte == ';') {
+            if (command->params_count >= CSI_MAX_PARAMS) {
+                return false;
+            }
+
+            command->params[command->params_count++] = has_digit ? value : 0;
+            value = 0;
+            has_digit = false;
+        } else {
+            /*
+             * Colon subparameters are not implemented yet. Rejecting them is
+             * safer than silently giving them semicolon semantics.
+             */
+            return false;
+        }
+    }
+
+    if (command->params_count >= CSI_MAX_PARAMS) {
+        return false;
+    }
+
+    command->params[command->params_count++] = has_digit ? value : 0;
+    return true;
+}
+
+
+int csi_parameter(const CsiCommand *command, size_t index, int default_value) {
+    if (index >= command->params_count || command->params[index] == 0) {
+        return default_value;
+    }
+
+    return command->params[index];
+}
+
+
+int add_clamped_to_int(int value, int amount) {
+    if (amount > INT_MAX - value) {
+        return INT_MAX;
+    }
+
+    return value + amount;
+}
+
+
+int subtract_clamped_to_zero(int value, int amount) {
+    if (amount >= value) {
+        return 0;
+    }
+
+    return value - amount;
+}
+
+
+void execute_csi_command(const CsiCommand *command) {
+    int amount = csi_parameter(command, 0, 1);
+
+    switch (command->action) {
+        case CSI_ACTION_CURSOR_UP:
+            cursor_position.row = subtract_clamped_to_zero(cursor_position.row, amount);
+            break;
+        case CSI_ACTION_CURSOR_DOWN:
+            cursor_position.row = add_clamped_to_int(cursor_position.row, amount);
+            break;
+        case CSI_ACTION_CURSOR_RIGHT:
+            cursor_position.column = add_clamped_to_int(cursor_position.column, amount);
+            break;
+        case CSI_ACTION_CURSOR_LEFT:
+            cursor_position.column = subtract_clamped_to_zero(cursor_position.column, amount);
+            break;
+        case CSI_ACTION_CURSOR_NEXT_LINE:
+            cursor_position.row = add_clamped_to_int(cursor_position.row, amount);
+            cursor_position.column = 0;
+            break;
+        case CSI_ACTION_CURSOR_PREVIOUS_LINE:
+            cursor_position.row = subtract_clamped_to_zero(cursor_position.row, amount);
+            cursor_position.column = 0;
+            break;
+        case CSI_ACTION_CURSOR_COLUMN:
+            cursor_position.column = csi_parameter(command, 0, 1) - 1;
+            break;
+        case CSI_ACTION_CURSOR_ROW:
+            cursor_position.row = csi_parameter(command, 0, 1) - 1;
+            break;
+        case CSI_ACTION_CURSOR_POSITION:
+            /*
+             * CSI coordinates are 1-based; the screen grid is 0-based.
+             * Missing or zero parameters default to row 1, column 1.
+             */
+            cursor_position.row = csi_parameter(command, 0, 1) - 1;
+            cursor_position.column = csi_parameter(command, 1, 1) - 1;
+            break;
+        case CSI_ACTION_SAVE_CURSOR:
+            saved_cursor_position = cursor_position;
+            break;
+        case CSI_ACTION_RESTORE_CURSOR:
+            cursor_position = saved_cursor_position;
+            break;
+        default:
+            /*
+             * Parsing recognizes the remaining actions, but screen mutation,
+             * text attributes, terminal modes, and query replies come next.
+             */
+            break;
+    }
 }
 
 
 void clear_csi_sequence(void) {
     clear_buffer(csi_sequence_ptr->params, &csi_sequence_ptr->params_len);
     clear_buffer(csi_sequence_ptr->intermediate_bytes, &csi_sequence_ptr->intermediate_bytes_len);
+    csi_sequence_ptr->final_byte = 0;
 }
 
 /* 
