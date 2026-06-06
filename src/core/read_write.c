@@ -66,7 +66,7 @@ struct csi_sequence {
 
 
 static TerminalState terminal_state = GROUND_STATE;
-static cell_properties properties;
+static cell_properties current_properties;
 static struct csi_sequence *csi_sequence_ptr = NULL;
 
 
@@ -78,8 +78,8 @@ void parse(int master_fd, uint8_t c);
 void clear_buffer(uint8_t *buffer, int *length);
 void parse_osc(uint8_t c);
 char to_utf8(uint8_t bytes[]);
-void to_screen_cell();
-void evaluate_csi_sequence(uint8_t buffer[], uint8_t buffer_length, uint8_t final_byte);
+void to_screen_cell(TerminalActionType *terminalActionType);
+TerminalActionType * evaluate_csi_sequence(struct csi_sequence *csi_sequence_ptr);
 
 
 /*
@@ -154,7 +154,8 @@ void parse(int master_fd, uint8_t c) {
             if(c == ESC_ASCII) {
                 terminal_state = ESCAPE_STATE;
             } else {
-                terminal_action_type = ACTION_PRINT;
+                TerminalActionType *terminal_action_type = NULL;
+                *terminal_action_type = ACTION_PRINT;
                 // what else here?
             }
             break;
@@ -209,7 +210,7 @@ int parse_csi(uint8_t c) {
       csi_sequence_ptr->intermediate_bytes_len++;
     } else if (c >= 0x40 && c <= 0x7E) { // final byte
         csi_sequence_ptr->final_byte = c;
-        TerminalActionType terminal_action_type = evaluate_csi_sequence();
+        TerminalActionType *terminal_action_type = evaluate_csi_sequence(csi_sequence_ptr);
         terminal_state = GROUND_STATE;
         clear_csi_sequence();
     } else {
@@ -221,7 +222,7 @@ int parse_csi(uint8_t c) {
 
 
 //TODO
-void evaluate_csi_sequence(uint8_t buffer[], uint8_t buffer_length, uint8_t final_byte) {
+TerminalActionType * evaluate_csi_sequence(struct csi_sequence *csi_sequence_ptr) {
    
 }
 
@@ -253,5 +254,5 @@ char to_utf8(uint8_t bytes[]) {
 
 
 //TODO
-void to_screen_cell() {
+void to_screen_cell(TerminalActionType *terminalActionType) {
 }
