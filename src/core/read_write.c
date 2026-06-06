@@ -138,6 +138,7 @@ void to_screen_cell(TerminalActionType *terminalActionType);
 CsiCommand evaluate_csi_sequence(const struct csi_sequence *sequence);
 void execute_csi_command(const CsiCommand *command);
 bool parse_csi_parameters(const struct csi_sequence *sequence, CsiCommand *command);
+int ascii_digit_to_int(uint8_t byte);
 int csi_parameter(const CsiCommand *command, size_t index, int default_value);
 int add_clamped_to_int(int value, int amount);
 int subtract_clamped_to_zero(int value, int amount);
@@ -362,34 +363,29 @@ bool parse_csi_parameters(const struct csi_sequence *sequence, CsiCommand *comma
         index++;
     }
 
+    /* No parameter bytes remain after an optional private marker. */
     if (index == sequence->params_len) {
         return true;
     }
 
     for (; index < sequence->params_len; index++) {
         uint8_t byte = sequence->params[index];
+        int digit = ascii_digit_to_int(byte);
 
-        if (byte >= '0' && byte <= '9') {
-            int digit = byte - '0';
-            if (value > (INT_MAX - digit) / 10) {
-                return false;
-            }
+        if (digit >= 0) {
+            if (value > (INT_MAX - digit) / 10) return false; // int overflow check
 
-            value = value * 10 + digit;
+            value = (value * 10) + digit; // adding one less significant digit
             has_digit = true;
-        } else if (byte == ';') {
-            if (command->params_count >= CSI_MAX_PARAMS) {
-                return false;
-            }
+        } else if (byte == ';') { // parameter seq terminated, another one starts
+            if (command->params_count >= CSI_MAX_PARAMS) return false;
 
-            command->params[command->params_count++] = has_digit ? value : 0;
+            command->params[command->params_count] = has_digit ? value : 0;
+            command->params_count++;
             value = 0;
             has_digit = false;
         } else {
-            /*
-             * Colon subparameters are not implemented yet. Rejecting them is
-             * safer than silently giving them semicolon semantics.
-             */
+            // colon subparameters are not implemented yet
             return false;
         }
     }
@@ -398,8 +394,22 @@ bool parse_csi_parameters(const struct csi_sequence *sequence, CsiCommand *comma
         return false;
     }
 
-    command->params[command->params_count++] = has_digit ? value : 0;
+    command->params[command->params_count] = has_digit ? value : 0;
+    command->params_count++;
     return true;
+}
+
+
+/* While working with params (that are ints), we still receive ascii bytes, so we need to convert
+ * them into their actual value.
+ * Returns -1 if not a digit
+ */
+int ascii_digit_to_int(uint8_t byte) {
+    if (byte < '0' || byte > '9') {
+        return -1;
+    }
+
+    return byte - '0';
 }
 
 
