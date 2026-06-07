@@ -413,7 +413,8 @@ int ascii_digit_to_int(uint8_t byte) {
 }
 
 
-int csi_parameter(const CsiCommand *command, size_t index, int default_value) {
+/* Returns the index_th parameter in the CSICommand, otherwise a default value */
+int get_csi_parameter_by_index(const CsiCommand *command, size_t index, int default_value) {
     if (index >= command->params_count || command->params[index] == 0) {
         return default_value;
     }
@@ -441,7 +442,7 @@ int subtract_clamped_to_zero(int value, int amount) {
 
 
 void execute_csi_command(const CsiCommand *command) {
-    int amount = csi_parameter(command, 0, 1);
+    int amount = get_csi_parameter_by_index(command, 0, 1); // getting the first parameter defaulting it to 1 if not available
 
     switch (command->action) {
         case CSI_ACTION_CURSOR_UP:
@@ -465,18 +466,18 @@ void execute_csi_command(const CsiCommand *command) {
             cursor_position.column = 0;
             break;
         case CSI_ACTION_CURSOR_COLUMN:
-            cursor_position.column = csi_parameter(command, 0, 1) - 1;
+            cursor_position.column = amount - 1;
             break;
-        case CSI_ACTION_CURSOR_ROW:
-            cursor_position.row = csi_parameter(command, 0, 1) - 1;
+        case CSI_ACTION_CURSOR_ROW
+            cursor_position.row = amount - 1;
             break;
         case CSI_ACTION_CURSOR_POSITION:
             /*
              * CSI coordinates are 1-based; the screen grid is 0-based.
              * Missing or zero parameters default to row 1, column 1.
              */
-            cursor_position.row = csi_parameter(command, 0, 1) - 1;
-            cursor_position.column = csi_parameter(command, 1, 1) - 1;
+            cursor_position.row = amount - 1;
+            cursor_position.column = get_csi_parameter_by_index(command, 1, 1) - 1;
             break;
         case CSI_ACTION_SAVE_CURSOR:
             saved_cursor_position = cursor_position;
@@ -500,6 +501,7 @@ void clear_csi_sequence(void) {
     csi_sequence_ptr->final_byte = 0;
 }
 
+
 /* 
  * Clearing buffer and it's length, once buffer is cleared len is zeroed
  */
@@ -509,7 +511,6 @@ void clear_buffer(uint8_t *buffer, int *length) {
 }
 
 
-/* will return -1 if the buffer overflows */
 //TODO
 void parse_osc(uint8_t c) {
 }
