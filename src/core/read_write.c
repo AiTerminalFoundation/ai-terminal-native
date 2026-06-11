@@ -84,13 +84,22 @@ typedef struct {
 } CsiCommand;
 
 typedef struct {
+    int rows;
+    int columns;
+    screen_cell *cells;
+
+    grid_position cursor;
+    grid_position saved_cursor;
+    cell_properties current_properties;
+  } TerminalScreen;
+
+typedef struct {
     bool is_bold;
 } cell_properties;
 
 typedef struct {
     bool is_empty_cell;
     char character;
-    grid_position position;
     cell_properties properties;
 } screen_cell;
 
