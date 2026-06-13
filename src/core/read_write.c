@@ -7,6 +7,7 @@
 #include <stdint.h>
 #include <stdbool.h>
 #include <limits.h>
+#include <string.h>
 
 #define BUFFER_SIZE 4096
 #define CSI_BUFFER_SIZE 128
@@ -72,26 +73,11 @@ typedef enum {
 } CsiAction;
 
 typedef struct {
-    int row;
-    int column;
-} grid_position;
-
-typedef struct {
     CsiAction action;
     int params[CSI_MAX_PARAMS];
     size_t params_count;
     uint8_t private_marker;
 } CsiCommand;
-
-typedef struct {
-    int rows;
-    int columns;
-    screen_cell *cells;
-
-    grid_position cursor;
-    grid_position saved_cursor;
-    cell_properties current_properties;
-  } TerminalScreen;
 
 typedef struct {
     bool is_bold;
@@ -102,6 +88,16 @@ typedef struct {
     char character;
     cell_properties properties;
 } screen_cell;
+
+typedef struct {
+    int rows;
+    int columns;
+    screen_cell *cells;
+
+    int cursor[2]; // [0] row and [1] col
+    int saved_cursor[2];
+    cell_properties current_properties;
+} TerminalScreen;
 
 typedef enum {
     GROUND_STATE,                       /* normal printing output state */
@@ -128,12 +124,9 @@ struct csi_sequence {
 
 
 static TerminalState terminal_state = GROUND_STATE;
-static cell_properties current_properties;
-static grid_position cursor_position = {.row = 0, .column = 0};
-static grid_position saved_cursor_position = {.row = 0, .column = 0};
 static struct csi_sequence csi_sequence;
 static struct csi_sequence *csi_sequence_ptr = &csi_sequence;
-
+static TerminalScreen terminal_screen;
 
 ssize_t write_bytes(char *bytes, int master_file_descriptor, size_t n_bytes);
 void read_loop(int master_file_descriptor, void (*on_output)(const char *buffer, ssize_t n_bytes_read, void *context), void *context);
@@ -180,8 +173,6 @@ void read_loop(int master_file_descriptor, void (*on_output)(const char *buffer,
     terminal_logger *logger = terminal_logger_find(master_file_descriptor);
     clear_csi_sequence();
     terminal_state = GROUND_STATE;
-    cursor_position = (grid_position){.row = 0, .column = 0};
-    saved_cursor_position = cursor_position;
 
     struct pollfd poll_file_descriptor = {
         .fd = master_file_descriptor,
@@ -455,44 +446,44 @@ void execute_csi_command(const CsiCommand *command) {
 
     switch (command->action) {
         case CSI_ACTION_CURSOR_UP:
-            cursor_position.row = subtract_clamped_to_zero(cursor_position.row, amount);
+            terminal_screen.cursor[0] = subtract_clamped_to_zero(terminal_screen.cursor[0], amount);
             break;
         case CSI_ACTION_CURSOR_DOWN:
-            cursor_position.row = add_clamped_to_int(cursor_position.row, amount);
+            terminal_screen.cursor[0] = add_clamped_to_int(terminal_screen.cursor[0], amount);
             break;
         case CSI_ACTION_CURSOR_RIGHT:
-            cursor_position.column = add_clamped_to_int(cursor_position.column, amount);
+            terminal_screen.cursor[1] = add_clamped_to_int(terminal_screen.cursor[1], amount);
             break;
         case CSI_ACTION_CURSOR_LEFT:
-            cursor_position.column = subtract_clamped_to_zero(cursor_position.column, amount);
+            terminal_screen.cursor[1] = subtract_clamped_to_zero(terminal_screen.cursor[1], amount);
             break;
         case CSI_ACTION_CURSOR_NEXT_LINE:
-            cursor_position.row = add_clamped_to_int(cursor_position.row, amount);
-            cursor_position.column = 0;
+            terminal_screen.cursor[0] = add_clamped_to_int(terminal_screen.cursor[0], amount);
+            terminal_screen.cursor[1] = 0;
             break;
         case CSI_ACTION_CURSOR_PREVIOUS_LINE:
-            cursor_position.row = subtract_clamped_to_zero(cursor_position.row, amount);
-            cursor_position.column = 0;
+            terminal_screen.cursor[0] = subtract_clamped_to_zero(terminal_screen.cursor[0], amount);
+            terminal_screen.cursor[1] = 0;
             break;
         case CSI_ACTION_CURSOR_COLUMN:
-            cursor_position.column = amount - 1;
+            terminal_screen.cursor[1] = amount - 1;
             break;
-        case CSI_ACTION_CURSOR_ROW
-            cursor_position.row = amount - 1;
+        case CSI_ACTION_CURSOR_ROW:
+            terminal_screen.cursor[0] = amount - 1;
             break;
         case CSI_ACTION_CURSOR_POSITION:
             /*
              * CSI coordinates are 1-based; the screen grid is 0-based.
              * Missing or zero parameters default to row 1, column 1.
              */
-            cursor_position.row = amount - 1;
-            cursor_position.column = get_csi_parameter_by_index(command, 1, 1) - 1;
+            terminal_screen.cursor[0] = amount - 1;
+            terminal_screen.cursor[1] = get_csi_parameter_by_index(command, 1, 1) - 1;
             break;
         case CSI_ACTION_SAVE_CURSOR:
-            saved_cursor_position = cursor_position;
+            memcpy(terminal_screen.saved_cursor, terminal_screen.cursor, 2);
             break;
         case CSI_ACTION_RESTORE_CURSOR:
-            cursor_position = saved_cursor_position;
+            memcpy(terminal_screen.cursor, terminal_screen.saved_cursor, 2);
             break;
         default:
             /*
