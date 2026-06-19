@@ -12,7 +12,8 @@ struct macos_uiApp: App {
     var body: some Scene {
         WindowGroup {
             TerminalRootView()
-                .environment(\.font, .custom("JetBrainsMono-Regular", size: 12))
+                .environment(\.font, .custom(DefaultSettings.fontName, size: DefaultSettings.fontSize))
         }
+        .defaultSize(width: DefaultSettings.windowWidth, height: DefaultSettings.windowHeight)
     }
 }

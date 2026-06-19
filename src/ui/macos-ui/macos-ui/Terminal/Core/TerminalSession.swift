@@ -1,0 +1,133 @@
+import Foundation
+import Darwin
+internal import Combine
+
+final class TerminalSession: ObservableObject {
+
+    private var master_fd: Int32 = -1
+    private var slave_fd: Int32 = -1
+    private var session_id_c_string: UnsafeMutablePointer<CChar>? = nil
+    @Published var session_id: String = ""
+    private var isRunning = false
+    private var isClosed = false
+    
+    private static let outputCallback: @convention(c) (UnsafePointer<CChar>?, Int, UnsafeMutableRawPointer?) -> Void = { buffer, nBytes, context in
+                
+        guard let context = context else { return }
+        let instance = Unmanaged<TerminalSession>.fromOpaque(context).takeUnretainedValue()
+        
+        
+        if let buffer = buffer, nBytes > 0 {
+            let data = Data(bytes: buffer, count: nBytes)
+
+            DispatchQueue.main.async {
+//                instance.processOutput(data)
+            }
+        }
+    }
+
+    func start() {
+        guard !isRunning else { return }
+
+        let result = create_pseudoterminal(&master_fd, &slave_fd, &session_id_c_string)
+
+        guard result == 0 else {
+            resetDescriptors()
+            return
+        }
+
+        guard let newSessionId = convertCStringToSwiftString(&session_id_c_string) else {
+            closeCurrentDescriptors()
+            return
+        }
+
+        session_id = newSessionId
+        isRunning = true
+        isClosed = false
+
+        let forkResult = fork_and_exec_shell(master_fd, slave_fd)
+
+        if forkResult < 0 {
+            closeCurrentDescriptors()
+            return
+        }
+
+        // fork_and_exec_shell closes the slave fd in the parent process.
+        slave_fd = -1
+
+        // Keep the session alive until the read loop exits so closing a tab cannot
+        // leave C callbacks pointing at a deallocated Swift object.
+        let context = Unmanaged.passRetained(self).toOpaque()
+        DispatchQueue.global(qos: .userInitiated).async { [master = self.master_fd] in
+            read_loop(master, TerminalSession.outputCallback, context)
+            let session = Unmanaged<TerminalSession>.fromOpaque(context).takeUnretainedValue()
+            DispatchQueue.main.async {
+                session.isRunning = false
+            }
+            Unmanaged<TerminalSession>.fromOpaque(context).release()
+        }
+    }
+    
+    func send_input_string(input: String) {
+        guard isRunning, !isClosed else { return }
+
+        let inputData = Array(input.utf8CString)
+        let inputLength = inputData.count - 1
+
+        guard inputLength > 0 else { return }
+
+        inputData.withUnsafeBufferPointer { buffer in
+            guard let baseAddress = buffer.baseAddress else { return }
+
+            var bytesSent = 0
+
+            while bytesSent < inputLength {
+                let result = write_bytes(
+                    UnsafeMutablePointer(mutating: baseAddress.advanced(by: bytesSent)),
+                    master_fd,
+                    inputLength - bytesSent
+                )
+
+                if result <= 0 {
+                    DispatchQueue.main.async {
+                        self.isRunning = false
+                    }
+                    return
+                }
+
+                bytesSent += result
+            }
+        }
+    }
+
+    func stop() {
+        guard !isClosed else { return }
+
+        isClosed = true
+        isRunning = false
+        closeCurrentDescriptors()
+    }
+
+    deinit {
+        stop()
+    }
+
+    private func resetDescriptors() {
+        master_fd = -1
+        slave_fd = -1
+    }
+
+    private func closeCurrentDescriptors() {
+        let master = master_fd
+        let slave = slave_fd
+        resetDescriptors()
+
+        if slave >= 0 {
+            close(slave)
+        }
+
+        if master >= 0 {
+            close_terminal_session(master)
+        }
+    }
+}

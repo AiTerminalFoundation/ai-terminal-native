@@ -9,6 +9,8 @@
 #include <limits.h>
 #include <string.h>
 
+
+
 #define BUFFER_SIZE 4096
 #define CSI_BUFFER_SIZE 128
 #define CSI_INTERMEDIATE_BUFFER_SIZE 8
@@ -81,6 +83,7 @@ typedef struct {
 
 typedef struct {
     bool is_bold;
+    uint8_t color;
 } cell_properties;
 
 typedef struct {
@@ -162,7 +165,7 @@ ssize_t write_bytes(char *bytes, int master_file_descriptor, size_t n_bytes) {
 /*
  * Reading the STDOUT connected to the slave connected to the given master
  */
-// the on_output is going to change, it will basically send a grid, and each entry a[m][n] of the matrix will have what is going to change, so for instance if we have a matrix of 
+// the on_output is going to change, it will basically send a grid, and each entry a[m][n] of the matrix will have what is going to change, so for instance if we have a matrix of
 // mxn (let's say 1092x728) and we reduce the window size we will send a new matrix of new_m x new_n with in each of the matrix[i][j] the new chars. so then swiftui should just render a matrix.
 // to get the window_size we get it from termios (already implementd in the main one)
 // we will need something to parse escape sequences in real characters (it's going to be a big switch?)
@@ -191,7 +194,7 @@ void read_loop(int master_file_descriptor, void (*on_output)(const char *buffer,
         // if we use == we will lose this edge case
         if((poll_file_descriptor.revents & POLLIN) > 0) {
             ssize_t n_bytes_read = read(master_file_descriptor, buffer, BUFFER_SIZE);
-            
+
             // some error, as we expect output here given that the bitwise operation is true
             // TODO: add a counter for the error to have some sort of reliability before exiting the loop
             if(n_bytes_read <= 0) break;
@@ -502,7 +505,7 @@ void clear_csi_sequence(void) {
 }
 
 
-/* 
+/*
  * Clearing buffer and it's length, once buffer is cleared len is zeroed
  */
 void clear_buffer(uint8_t *buffer, int *length) {
