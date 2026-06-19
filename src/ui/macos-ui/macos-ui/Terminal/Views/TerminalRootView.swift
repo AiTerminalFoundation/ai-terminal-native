@@ -1,7 +1,7 @@
 import SwiftUI
 
 struct TerminalRootView: View {
-    private let masterFileDescriptor: Int32?
+    @StateObject private var session = TerminalSession()
 
     @State private var terminalSize = TerminalSize(
         width: DefaultSettings.windowWidth,
@@ -9,28 +9,38 @@ struct TerminalRootView: View {
         rows: DefaultSettings.rows,
         cols: DefaultSettings.columns
     )
-
-    init(masterFileDescriptor: Int32? = nil) {
-        self.masterFileDescriptor = masterFileDescriptor
-    }
+    @State private var didStartSession = false
 
     var body: some View {
         TerminalCellGrid(size: terminalSize)
             .background(Color(red: 0.06, green: 0.065, blue: 0.07))
-            .frame(maxWidth: .infinity, maxHeight: .infinity)
+            .frame(
+                minWidth: DefaultSettings.minimumWindowWidth,
+                maxWidth: .infinity,
+                minHeight: DefaultSettings.minimumWindowHeight,
+                maxHeight: .infinity
+            )
             .detectWindowSize { size in
                 updateTerminalSize(from: size)
             }
     }
 
     private func updateTerminalSize(from size: CGSize) {
+        guard size.width > 0, size.height > 0 else { return }
+
         let newTerminalSize = makeTerminalSize(from: size)
         let gridChanged = newTerminalSize.rows != terminalSize.rows || newTerminalSize.cols != terminalSize.cols
 
         terminalSize = newTerminalSize
 
+        if !didStartSession {
+            didStartSession = true
+            session.start(size: newTerminalSize)
+            return
+        }
+
         if gridChanged {
-            resizePty(to: newTerminalSize)
+            session.resize(to: newTerminalSize)
         }
     }
 
@@ -38,22 +48,8 @@ struct TerminalRootView: View {
         TerminalSize(
             width: size.width,
             height: size.height,
-            rows: max(1, Int(size.height / DefaultSettings.fontSize)),
-            cols: max(1, Int(size.width / DefaultSettings.fontSize))
-        )
-    }
-
-    private func resizePty(to size: TerminalSize) {
-        guard let masterFileDescriptor else {
-            return
-        }
-
-        _ = resize_terminal_window(
-            masterFileDescriptor,
-            Int32(size.rows),
-            Int32(size.cols),
-            Int32(size.width.rounded()),
-            Int32(size.height.rounded())
+            rows: max(1, Int(size.height / DefaultSettings.cellHeight)),
+            cols: max(1, Int(size.width / DefaultSettings.cellWidth))
         )
     }
 }

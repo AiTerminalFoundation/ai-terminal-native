@@ -7,7 +7,7 @@ final class TerminalSession: ObservableObject {
     private var master_fd: Int32 = -1
     private var slave_fd: Int32 = -1
     private var session_id_c_string: UnsafeMutablePointer<CChar>? = nil
-    @Published var session_id: String = ""
+    @Published private(set) var session_id: String = ""
     private var isRunning = false
     private var isClosed = false
     
@@ -26,18 +26,18 @@ final class TerminalSession: ObservableObject {
         }
     }
 
-    func start() {
+    func start(size: TerminalSize? = nil) {
         guard !isRunning else { return }
 
         let result = create_pseudoterminal(&master_fd, &slave_fd, &session_id_c_string)
 
         guard result == 0 else {
-            resetDescriptors()
+            failStartup()
             return
         }
 
         guard let newSessionId = convertCStringToSwiftString(&session_id_c_string) else {
-            closeCurrentDescriptors()
+            failStartup()
             return
         }
 
@@ -48,12 +48,16 @@ final class TerminalSession: ObservableObject {
         let forkResult = fork_and_exec_shell(master_fd, slave_fd)
 
         if forkResult < 0 {
-            closeCurrentDescriptors()
+            failStartup()
             return
         }
 
         // fork_and_exec_shell closes the slave fd in the parent process.
         slave_fd = -1
+
+        if let size {
+            resize(to: size)
+        }
 
         // Keep the session alive until the read loop exits so closing a tab cannot
         // leave C callbacks pointing at a deallocated Swift object.
@@ -66,6 +70,18 @@ final class TerminalSession: ObservableObject {
             }
             Unmanaged<TerminalSession>.fromOpaque(context).release()
         }
+    }
+
+    func resize(to size: TerminalSize) {
+        guard isRunning, !isClosed, master_fd >= 0 else { return }
+
+        _ = resize_terminal_window(
+            master_fd,
+            Int32(size.rows),
+            Int32(size.cols),
+            Int32(size.width.rounded()),
+            Int32(size.height.rounded())
+        )
     }
     
     func send_input_string(input: String) {
@@ -115,6 +131,12 @@ final class TerminalSession: ObservableObject {
     private func resetDescriptors() {
         master_fd = -1
         slave_fd = -1
+    }
+
+    private func failStartup() {
+        isRunning = false
+        closeCurrentDescriptors()
+        isClosed = true
     }
 
     private func closeCurrentDescriptors() {
