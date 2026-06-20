@@ -12,7 +12,12 @@ struct TerminalRootView: View {
     @State private var didStartSession = false
 
     var body: some View {
-        TerminalCellGrid(size: terminalSize)
+        TerminalCellGrid(
+            size: terminalSize,
+            cells: session.cells,
+            cursorRow: session.cursorRow,
+            cursorColumn: session.cursorColumn
+        )
             .background(Color(red: 0.06, green: 0.065, blue: 0.07))
             .frame(
                 minWidth: DefaultSettings.minimumWindowWidth,
@@ -22,6 +27,11 @@ struct TerminalRootView: View {
             )
             .detectWindowSize { size in
                 updateTerminalSize(from: size)
+            }
+            .overlay {
+                TerminalKeyboardInputView { input in
+                    session.send_input_string(input: input)
+                }
             }
     }
 
@@ -56,6 +66,9 @@ struct TerminalRootView: View {
 
 private struct TerminalCellGrid: View {
     let size: TerminalSize
+    let cells: [TerminalCell]
+    let cursorRow: Int
+    let cursorColumn: Int
 
     var body: some View {
         Canvas { context, canvasSize in
@@ -79,6 +92,57 @@ private struct TerminalCellGrid: View {
             }
 
             context.stroke(grid, with: .color(.white.opacity(0.18)), lineWidth: 0.5)
+
+            if cursorRow >= 0, cursorRow < rows, cursorColumn >= 0, cursorColumn < cols {
+                let cursorRect = CGRect(
+                    x: CGFloat(cursorColumn) * cellWidth,
+                    y: CGFloat(cursorRow) * cellHeight,
+                    width: cellWidth,
+                    height: cellHeight
+                )
+                context.fill(Path(cursorRect), with: .color(.white.opacity(0.25)))
+            }
+
+            for row in 0..<rows {
+                for col in 0..<cols {
+                    let index = row * cols + col
+                    guard index < cells.count else { continue }
+
+                    let cell = cells[index]
+                    guard !cell.isEmpty else { continue }
+
+                    var text = Text(cell.character)
+                        .font(.custom(DefaultSettings.fontName, size: DefaultSettings.fontSize))
+                        .foregroundStyle(Self.color(for: cell.color))
+
+                    if cell.isBold {
+                        text = text.fontWeight(.bold)
+                    }
+
+                    context.draw(
+                        text,
+                        at: CGPoint(
+                            x: CGFloat(col) * cellWidth + cellWidth / 2,
+                            y: CGFloat(row) * cellHeight + cellHeight / 2
+                        ),
+                        anchor: .center
+                    )
+                }
+            }
+        }
+    }
+
+    private static func color(for ansiColor: UInt8) -> Color {
+        switch ansiColor {
+            case 1: return Color(red: 0.12, green: 0.12, blue: 0.12)
+            case 2: return Color(red: 0.80, green: 0.20, blue: 0.20)
+            case 3: return Color(red: 0.25, green: 0.75, blue: 0.35)
+            case 4: return Color(red: 0.85, green: 0.70, blue: 0.25)
+            case 5: return Color(red: 0.35, green: 0.55, blue: 0.95)
+            case 6: return Color(red: 0.75, green: 0.40, blue: 0.85)
+            case 7: return Color(red: 0.35, green: 0.80, blue: 0.85)
+            case 8: return Color(red: 0.88, green: 0.88, blue: 0.84)
+            default: return Color(red: 0.88, green: 0.88, blue: 0.84)
         }
     }
 }

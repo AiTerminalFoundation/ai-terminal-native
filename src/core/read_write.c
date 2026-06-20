@@ -87,15 +87,9 @@ typedef struct {
 } cell_properties;
 
 typedef struct {
-    bool is_empty_cell;
-    char character;
-    cell_properties properties;
-} screen_cell;
-
-typedef struct {
     int rows;
     int columns;
-    screen_cell *cells;
+    TerminalScreenCell *cells;
 
     int cursor[2]; // [0] row and [1] col
     int saved_cursor[2];
@@ -132,7 +126,8 @@ static struct csi_sequence *csi_sequence_ptr = &csi_sequence;
 static TerminalScreen terminal_screen;
 
 ssize_t write_bytes(char *bytes, int master_file_descriptor, size_t n_bytes);
-void read_loop(int master_file_descriptor, void (*on_output)(const char *buffer, ssize_t n_bytes_read, void *context), void *context);
+int resize_terminal_screen(int rows, int columns);
+void read_loop(int master_file_descriptor, void (*on_output)(const TerminalScreenSnapshot *snapshot, void *context), void *context);
 void clear_csi_sequence(void);
 int parse_csi(uint8_t c);
 void parse(int master_fd, uint8_t c);
@@ -144,9 +139,21 @@ CsiCommand evaluate_csi_sequence(const struct csi_sequence *sequence);
 void execute_csi_command(const CsiCommand *command);
 bool parse_csi_parameters(const struct csi_sequence *sequence, CsiCommand *command);
 int ascii_digit_to_int(uint8_t byte);
-int csi_parameter(const CsiCommand *command, size_t index, int default_value);
+int get_csi_parameter_by_index(const CsiCommand *command, size_t index, int default_value);
 int add_clamped_to_int(int value, int amount);
 int subtract_clamped_to_zero(int value, int amount);
+void terminal_screen_clear(void);
+void terminal_screen_clear_cell(TerminalScreenCell *cell);
+void terminal_screen_clear_row(int row);
+void terminal_screen_clamp_cursor(void);
+void terminal_screen_new_line(void);
+void terminal_screen_scroll_up_one_line(void);
+void terminal_screen_put_byte(uint8_t byte);
+void terminal_screen_apply_sgr(const CsiCommand *command);
+void terminal_screen_erase_line(int mode);
+void terminal_screen_erase_display(int mode);
+TerminalScreenSnapshot terminal_screen_snapshot(void);
+TerminalScreenSnapshot get_terminal_screen_snapshot(void);
 
 
 /*
@@ -161,6 +168,46 @@ ssize_t write_bytes(char *bytes, int master_file_descriptor, size_t n_bytes) {
     return write(master_file_descriptor, bytes, n_bytes);
 }
 
+int resize_terminal_screen(int rows, int columns) {
+    if (rows <= 0 || columns <= 0) {
+        return -1;
+    }
+
+    size_t cells_count = (size_t)rows * (size_t)columns;
+    if (cells_count > SIZE_MAX / sizeof(TerminalScreenCell)) {
+        return -1;
+    }
+
+    TerminalScreenCell *new_cells = calloc(cells_count, sizeof(TerminalScreenCell));
+    if (new_cells == NULL) {
+        return -1;
+    }
+
+    for (size_t index = 0; index < cells_count; index++) {
+        terminal_screen_clear_cell(&new_cells[index]);
+    }
+
+    if (terminal_screen.cells != NULL) {
+        int rows_to_copy = rows < terminal_screen.rows ? rows : terminal_screen.rows;
+        int columns_to_copy = columns < terminal_screen.columns ? columns : terminal_screen.columns;
+
+        for (int row = 0; row < rows_to_copy; row++) {
+            memcpy(
+                &new_cells[row * columns],
+                &terminal_screen.cells[row * terminal_screen.columns],
+                (size_t)columns_to_copy * sizeof(TerminalScreenCell)
+            );
+        }
+    }
+
+    free(terminal_screen.cells);
+    terminal_screen.cells = new_cells;
+    terminal_screen.rows = rows;
+    terminal_screen.columns = columns;
+    terminal_screen_clamp_cursor();
+    return 0;
+}
+
 
 /*
  * Reading the STDOUT connected to the slave connected to the given master
@@ -170,7 +217,7 @@ ssize_t write_bytes(char *bytes, int master_file_descriptor, size_t n_bytes) {
 // to get the window_size we get it from termios (already implementd in the main one)
 // we will need something to parse escape sequences in real characters (it's going to be a big switch?)
 // how do we send the cursor position? we are going to send an entire struct to the screen that will be build with (int cursor_i = x, int cursor_j, int cursor_type(i want to be able to render a normal text editor like cursor, char[][] screen) we will send already parsed sequences
-void read_loop(int master_file_descriptor, void (*on_output)(const char *buffer, ssize_t n_bytes_read, void *context), void *context) {
+void read_loop(int master_file_descriptor, void (*on_output)(const TerminalScreenSnapshot *snapshot, void *context), void *context) {
     char buffer[BUFFER_SIZE];
 
     terminal_logger *logger = terminal_logger_find(master_file_descriptor);
@@ -207,6 +254,11 @@ void read_loop(int master_file_descriptor, void (*on_output)(const char *buffer,
             for(int i = 0; i < n_bytes_read; i++) {
                 parse(master_file_descriptor, buffer[i]);
             }
+
+            if (on_output != NULL && terminal_screen.cells != NULL) {
+                TerminalScreenSnapshot snapshot = terminal_screen_snapshot();
+                on_output(&snapshot, context);
+            }
         }
     }
 
@@ -221,10 +273,21 @@ void parse(int master_fd, uint8_t c) {
         case GROUND_STATE:
             if(c == ESC_ASCII) {
                 terminal_state = ESCAPE_STATE;
+            } else if (c == '\r') {
+                terminal_screen.cursor[1] = 0;
+            } else if (c == '\n') {
+                terminal_screen_new_line();
+            } else if (c == '\b' || c == 0x7f) {
+                terminal_screen.cursor[1] = subtract_clamped_to_zero(terminal_screen.cursor[1], 1);
+            } else if (c == '\t') {
+                int spaces = 8 - (terminal_screen.cursor[1] % 8);
+                for (int i = 0; i < spaces; i++) {
+                    terminal_screen_put_byte(' ');
+                }
+            } else if (c >= 0x20) {
+                terminal_screen_put_byte(c);
             } else {
-                TerminalActionType terminal_action_type = ACTION_PRINT;
-                (void)terminal_action_type;
-                // what else here?
+                /* Other C0 controls are ignored for the first rendering pass. */
             }
             break;
         case ESCAPE_STATE:
@@ -445,34 +508,42 @@ int subtract_clamped_to_zero(int value, int amount) {
 
 
 void execute_csi_command(const CsiCommand *command) {
-    int amount = get_csi_parameter_by_index(command, 0, 1); // getting the first parameter defaulting it to 1 if not available
+    int amount = get_csi_parameter_by_index(command, 0, 1); // getting the first parameter value and defaulting it to 1 if not available
 
     switch (command->action) {
         case CSI_ACTION_CURSOR_UP:
             terminal_screen.cursor[0] = subtract_clamped_to_zero(terminal_screen.cursor[0], amount);
+            terminal_screen_clamp_cursor();
             break;
         case CSI_ACTION_CURSOR_DOWN:
             terminal_screen.cursor[0] = add_clamped_to_int(terminal_screen.cursor[0], amount);
+            terminal_screen_clamp_cursor();
             break;
         case CSI_ACTION_CURSOR_RIGHT:
             terminal_screen.cursor[1] = add_clamped_to_int(terminal_screen.cursor[1], amount);
+            terminal_screen_clamp_cursor();
             break;
         case CSI_ACTION_CURSOR_LEFT:
             terminal_screen.cursor[1] = subtract_clamped_to_zero(terminal_screen.cursor[1], amount);
+            terminal_screen_clamp_cursor();
             break;
         case CSI_ACTION_CURSOR_NEXT_LINE:
             terminal_screen.cursor[0] = add_clamped_to_int(terminal_screen.cursor[0], amount);
             terminal_screen.cursor[1] = 0;
+            terminal_screen_clamp_cursor();
             break;
         case CSI_ACTION_CURSOR_PREVIOUS_LINE:
             terminal_screen.cursor[0] = subtract_clamped_to_zero(terminal_screen.cursor[0], amount);
             terminal_screen.cursor[1] = 0;
+            terminal_screen_clamp_cursor();
             break;
         case CSI_ACTION_CURSOR_COLUMN:
             terminal_screen.cursor[1] = amount - 1;
+            terminal_screen_clamp_cursor();
             break;
         case CSI_ACTION_CURSOR_ROW:
             terminal_screen.cursor[0] = amount - 1;
+            terminal_screen_clamp_cursor();
             break;
         case CSI_ACTION_CURSOR_POSITION:
             /*
@@ -481,12 +552,23 @@ void execute_csi_command(const CsiCommand *command) {
              */
             terminal_screen.cursor[0] = amount - 1;
             terminal_screen.cursor[1] = get_csi_parameter_by_index(command, 1, 1) - 1;
+            terminal_screen_clamp_cursor();
+            break;
+        case CSI_ACTION_ERASE_LINE:
+            terminal_screen_erase_line(get_csi_parameter_by_index(command, 0, 0));
+            break;
+        case CSI_ACTION_ERASE_DISPLAY:
+            terminal_screen_erase_display(get_csi_parameter_by_index(command, 0, 0));
+            break;
+        case CSI_ACTION_SGR:
+            terminal_screen_apply_sgr(command);
             break;
         case CSI_ACTION_SAVE_CURSOR:
-            memcpy(terminal_screen.saved_cursor, terminal_screen.cursor, 2);
+            memcpy(terminal_screen.saved_cursor, terminal_screen.cursor, sizeof(terminal_screen.cursor));
             break;
         case CSI_ACTION_RESTORE_CURSOR:
-            memcpy(terminal_screen.cursor, terminal_screen.saved_cursor, 2);
+            memcpy(terminal_screen.cursor, terminal_screen.saved_cursor, sizeof(terminal_screen.cursor));
+            terminal_screen_clamp_cursor();
             break;
         default:
             /*
@@ -511,6 +593,199 @@ void clear_csi_sequence(void) {
 void clear_buffer(uint8_t *buffer, int *length) {
     for (int i = 0; i < *length; i++) buffer[i] = 0;
     *length = 0;
+}
+
+void terminal_screen_clear(void) {
+    if (terminal_screen.cells == NULL) {
+        return;
+    }
+
+    size_t cells_count = (size_t)terminal_screen.rows * (size_t)terminal_screen.columns;
+    for (size_t index = 0; index < cells_count; index++) {
+        terminal_screen_clear_cell(&terminal_screen.cells[index]);
+    }
+
+    terminal_screen.cursor[0] = 0;
+    terminal_screen.cursor[1] = 0;
+}
+
+void terminal_screen_clear_cell(TerminalScreenCell *cell) {
+    cell->codepoint = ' ';
+    cell->is_empty = 1;
+    cell->is_bold = 0;
+    cell->color = 0;
+    cell->reserved = 0;
+}
+
+void terminal_screen_clear_row(int row) {
+    if (terminal_screen.cells == NULL || row < 0 || row >= terminal_screen.rows) {
+        return;
+    }
+
+    for (int column = 0; column < terminal_screen.columns; column++) {
+        terminal_screen_clear_cell(&terminal_screen.cells[row * terminal_screen.columns + column]);
+    }
+}
+
+void terminal_screen_clamp_cursor(void) {
+    if (terminal_screen.rows <= 0 || terminal_screen.columns <= 0) {
+        terminal_screen.cursor[0] = 0;
+        terminal_screen.cursor[1] = 0;
+        return;
+    }
+
+    if (terminal_screen.cursor[0] < 0) terminal_screen.cursor[0] = 0;
+    if (terminal_screen.cursor[1] < 0) terminal_screen.cursor[1] = 0;
+    if (terminal_screen.cursor[0] >= terminal_screen.rows) terminal_screen.cursor[0] = terminal_screen.rows - 1;
+    if (terminal_screen.cursor[1] >= terminal_screen.columns) terminal_screen.cursor[1] = terminal_screen.columns - 1;
+}
+
+void terminal_screen_new_line(void) {
+    if (terminal_screen.cells == NULL) {
+        return;
+    }
+
+    terminal_screen.cursor[0]++;
+    if (terminal_screen.cursor[0] >= terminal_screen.rows) {
+        terminal_screen_scroll_up_one_line();
+        terminal_screen.cursor[0] = terminal_screen.rows - 1;
+    }
+}
+
+void terminal_screen_scroll_up_one_line(void) {
+    if (terminal_screen.cells == NULL || terminal_screen.rows <= 0 || terminal_screen.columns <= 0) {
+        return;
+    }
+
+    if (terminal_screen.rows > 1) {
+        memmove(
+            terminal_screen.cells,
+            &terminal_screen.cells[terminal_screen.columns],
+            (size_t)(terminal_screen.rows - 1) * (size_t)terminal_screen.columns * sizeof(TerminalScreenCell)
+        );
+    }
+
+    terminal_screen_clear_row(terminal_screen.rows - 1);
+}
+
+void terminal_screen_put_byte(uint8_t byte) {
+    if (terminal_screen.cells == NULL || terminal_screen.rows <= 0 || terminal_screen.columns <= 0) {
+        return;
+    }
+
+    terminal_screen_clamp_cursor();
+
+    int row = terminal_screen.cursor[0];
+    int column = terminal_screen.cursor[1];
+    TerminalScreenCell *cell = &terminal_screen.cells[row * terminal_screen.columns + column];
+    cell->codepoint = byte;
+    cell->is_empty = 0;
+    cell->is_bold = terminal_screen.current_properties.is_bold ? 1 : 0;
+    cell->color = terminal_screen.current_properties.color;
+    cell->reserved = 0;
+
+    terminal_screen.cursor[1]++;
+    if (terminal_screen.cursor[1] >= terminal_screen.columns) {
+        terminal_screen.cursor[1] = 0;
+        terminal_screen_new_line();
+    }
+}
+
+void terminal_screen_apply_sgr(const CsiCommand *command) {
+    if (command->params_count == 0) {
+        terminal_screen.current_properties.is_bold = false;
+        terminal_screen.current_properties.color = 0;
+        return;
+    }
+
+    for (size_t index = 0; index < command->params_count; index++) {
+        int parameter = command->params[index];
+
+        if (parameter == 0) {
+            terminal_screen.current_properties.is_bold = false;
+            terminal_screen.current_properties.color = 0;
+        } else if (parameter == 1) {
+            terminal_screen.current_properties.is_bold = true;
+        } else if (parameter == 22) {
+            terminal_screen.current_properties.is_bold = false;
+        } else if (parameter >= 30 && parameter <= 37) {
+            terminal_screen.current_properties.color = (uint8_t)(parameter - 30 + 1);
+        } else if (parameter == 39) {
+            terminal_screen.current_properties.color = 0;
+        }
+    }
+}
+
+void terminal_screen_erase_line(int mode) {
+    if (terminal_screen.cells == NULL) {
+        return;
+    }
+
+    terminal_screen_clamp_cursor();
+
+    int row = terminal_screen.cursor[0];
+    int start_column = 0;
+    int end_column = terminal_screen.columns - 1;
+
+    if (mode == 0) {
+        start_column = terminal_screen.cursor[1];
+    } else if (mode == 1) {
+        end_column = terminal_screen.cursor[1];
+    } else if (mode != 2) {
+        return;
+    }
+
+    for (int column = start_column; column <= end_column; column++) {
+        terminal_screen_clear_cell(&terminal_screen.cells[row * terminal_screen.columns + column]);
+    }
+}
+
+void terminal_screen_erase_display(int mode) {
+    if (terminal_screen.cells == NULL) {
+        return;
+    }
+
+    terminal_screen_clamp_cursor();
+
+    if (mode == 2 || mode == 3) {
+        terminal_screen_clear();
+        return;
+    }
+
+    int cursor_row = terminal_screen.cursor[0];
+    int cursor_column = terminal_screen.cursor[1];
+
+    if (mode == 0) {
+        for (int row = cursor_row; row < terminal_screen.rows; row++) {
+            int start_column = row == cursor_row ? cursor_column : 0;
+            for (int column = start_column; column < terminal_screen.columns; column++) {
+                terminal_screen_clear_cell(&terminal_screen.cells[row * terminal_screen.columns + column]);
+            }
+        }
+    } else if (mode == 1) {
+        for (int row = 0; row <= cursor_row; row++) {
+            int end_column = row == cursor_row ? cursor_column : terminal_screen.columns - 1;
+            for (int column = 0; column <= end_column; column++) {
+                terminal_screen_clear_cell(&terminal_screen.cells[row * terminal_screen.columns + column]);
+            }
+        }
+    }
+}
+
+TerminalScreenSnapshot terminal_screen_snapshot(void) {
+    TerminalScreenSnapshot snapshot = {
+        .rows = terminal_screen.rows,
+        .columns = terminal_screen.columns,
+        .cursor_row = terminal_screen.cursor[0],
+        .cursor_column = terminal_screen.cursor[1],
+        .cells = terminal_screen.cells
+    };
+
+    return snapshot;
+}
+
+TerminalScreenSnapshot get_terminal_screen_snapshot(void) {
+    return terminal_screen_snapshot();
 }
 
 

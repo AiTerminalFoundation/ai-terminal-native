@@ -8,20 +8,30 @@ final class TerminalSession: ObservableObject {
     private var slave_fd: Int32 = -1
     private var session_id_c_string: UnsafeMutablePointer<CChar>? = nil
     @Published private(set) var session_id: String = ""
+    @Published private(set) var cells: [TerminalCell] = []
+    @Published private(set) var screenRows: Int = 0
+    @Published private(set) var screenColumns: Int = 0
+    @Published private(set) var cursorRow: Int = 0
+    @Published private(set) var cursorColumn: Int = 0
     private var isRunning = false
     private var isClosed = false
     
-    private static let outputCallback: @convention(c) (UnsafePointer<CChar>?, Int, UnsafeMutableRawPointer?) -> Void = { buffer, nBytes, context in
-                
+    private struct ScreenUpdate {
+        let cells: [TerminalCell]
+        let rows: Int
+        let columns: Int
+        let cursorRow: Int
+        let cursorColumn: Int
+    }
+
+    private static let outputCallback: @convention(c) (UnsafePointer<TerminalScreenSnapshot>?, UnsafeMutableRawPointer?) -> Void = { snapshot, context in
         guard let context = context else { return }
         let instance = Unmanaged<TerminalSession>.fromOpaque(context).takeUnretainedValue()
-        
-        
-        if let buffer = buffer, nBytes > 0 {
-            let data = Data(bytes: buffer, count: nBytes)
 
+        if let snapshot {
+            let update = TerminalSession.makeScreenUpdate(from: snapshot.pointee)
             DispatchQueue.main.async {
-//                instance.processOutput(data)
+                instance.apply(update: update)
             }
         }
     }
@@ -74,6 +84,10 @@ final class TerminalSession: ObservableObject {
 
     func resize(to size: TerminalSize) {
         guard isRunning, !isClosed, master_fd >= 0 else { return }
+
+        if resize_terminal_screen(Int32(size.rows), Int32(size.cols)) == 0 {
+            apply(update: TerminalSession.makeScreenUpdate(from: get_terminal_screen_snapshot()))
+        }
 
         _ = resize_terminal_window(
             master_fd,
@@ -131,6 +145,47 @@ final class TerminalSession: ObservableObject {
     private func resetDescriptors() {
         master_fd = -1
         slave_fd = -1
+    }
+
+    private static func makeScreenUpdate(from snapshot: TerminalScreenSnapshot) -> ScreenUpdate {
+        let rows = Int(snapshot.rows)
+        let columns = Int(snapshot.columns)
+        let cellsCount = max(0, rows * columns)
+        let cellPointer = snapshot.cells
+
+        var cells: [TerminalCell] = []
+        cells.reserveCapacity(cellsCount)
+
+        if let cellPointer {
+            for index in 0..<cellsCount {
+                let cell = cellPointer[index]
+                cells.append(
+                    TerminalCell(
+                        id: index,
+                        codepoint: cell.codepoint,
+                        isEmpty: cell.is_empty != 0,
+                        isBold: cell.is_bold != 0,
+                        color: cell.color
+                    )
+                )
+            }
+        }
+
+        return ScreenUpdate(
+            cells: cells,
+            rows: rows,
+            columns: columns,
+            cursorRow: Int(snapshot.cursor_row),
+            cursorColumn: Int(snapshot.cursor_column)
+        )
+    }
+
+    private func apply(update: ScreenUpdate) {
+        cells = update.cells
+        screenRows = update.rows
+        screenColumns = update.columns
+        cursorRow = update.cursorRow
+        cursorColumn = update.cursorColumn
     }
 
     private func failStartup() {
