@@ -123,7 +123,11 @@ struct csi_sequence {
 static TerminalState terminal_state = GROUND_STATE;
 static struct csi_sequence csi_sequence;
 static struct csi_sequence *csi_sequence_ptr = &csi_sequence;
-static TerminalScreen terminal_screen;
+static TerminalScreen main_terminal_screen;
+static TerminalScreen alternate_terminal_screen;
+static TerminalScreen *active_terminal_screen = &main_terminal_screen;
+static bool osc_escape_pending = false;
+#define terminal_screen (*active_terminal_screen)
 
 ssize_t write_bytes(char *bytes, int master_file_descriptor, size_t n_bytes);
 int resize_terminal_screen(int rows, int columns);
@@ -142,6 +146,8 @@ int ascii_digit_to_int(uint8_t byte);
 int get_csi_parameter_by_index(const CsiCommand *command, size_t index, int default_value);
 int add_clamped_to_int(int value, int amount);
 int subtract_clamped_to_zero(int value, int amount);
+int resize_single_terminal_screen(TerminalScreen *screen, int rows, int columns);
+void terminal_screen_use_alternate(bool enabled);
 void terminal_screen_clear(void);
 void terminal_screen_clear_cell(TerminalScreenCell *cell);
 void terminal_screen_clear_row(int row);
@@ -173,6 +179,19 @@ int resize_terminal_screen(int rows, int columns) {
         return -1;
     }
 
+    if (resize_single_terminal_screen(&main_terminal_screen, rows, columns) != 0) {
+        return -1;
+    }
+
+    if (resize_single_terminal_screen(&alternate_terminal_screen, rows, columns) != 0) {
+        return -1;
+    }
+
+    terminal_screen_clamp_cursor();
+    return 0;
+}
+
+int resize_single_terminal_screen(TerminalScreen *screen, int rows, int columns) {
     size_t cells_count = (size_t)rows * (size_t)columns;
     if (cells_count > SIZE_MAX / sizeof(TerminalScreenCell)) {
         return -1;
@@ -187,24 +206,27 @@ int resize_terminal_screen(int rows, int columns) {
         terminal_screen_clear_cell(&new_cells[index]);
     }
 
-    if (terminal_screen.cells != NULL) {
-        int rows_to_copy = rows < terminal_screen.rows ? rows : terminal_screen.rows;
-        int columns_to_copy = columns < terminal_screen.columns ? columns : terminal_screen.columns;
+    if (screen->cells != NULL) {
+        int rows_to_copy = rows < screen->rows ? rows : screen->rows;
+        int columns_to_copy = columns < screen->columns ? columns : screen->columns;
 
         for (int row = 0; row < rows_to_copy; row++) {
             memcpy(
                 &new_cells[row * columns],
-                &terminal_screen.cells[row * terminal_screen.columns],
+                &screen->cells[row * screen->columns],
                 (size_t)columns_to_copy * sizeof(TerminalScreenCell)
             );
         }
     }
 
-    free(terminal_screen.cells);
-    terminal_screen.cells = new_cells;
-    terminal_screen.rows = rows;
-    terminal_screen.columns = columns;
-    terminal_screen_clamp_cursor();
+    free(screen->cells);
+    screen->cells = new_cells;
+    screen->rows = rows;
+    screen->columns = columns;
+    if (screen->cursor[0] >= rows) screen->cursor[0] = rows - 1;
+    if (screen->cursor[1] >= columns) screen->cursor[1] = columns - 1;
+    if (screen->cursor[0] < 0) screen->cursor[0] = 0;
+    if (screen->cursor[1] < 0) screen->cursor[1] = 0;
     return 0;
 }
 
@@ -297,6 +319,7 @@ void parse(int master_fd, uint8_t c) {
                     terminal_state = CONTROL_SEQUENCE_INTRODUCER_STATE;
                     break;
                 case OPERATING_SYSTEM_COMMAND_ASCII:
+                    osc_escape_pending = false;
                     terminal_state = OPERATING_SYSTEM_COMMAND_STATE;
                     break;
                 default:
@@ -563,6 +586,16 @@ void execute_csi_command(const CsiCommand *command) {
         case CSI_ACTION_SGR:
             terminal_screen_apply_sgr(command);
             break;
+        case CSI_ACTION_SET_MODE:
+            if (command->private_marker == '?' && get_csi_parameter_by_index(command, 0, 0) == 1049) {
+                terminal_screen_use_alternate(true);
+            }
+            break;
+        case CSI_ACTION_RESET_MODE:
+            if (command->private_marker == '?' && get_csi_parameter_by_index(command, 0, 0) == 1049) {
+                terminal_screen_use_alternate(false);
+            }
+            break;
         case CSI_ACTION_SAVE_CURSOR:
             memcpy(terminal_screen.saved_cursor, terminal_screen.cursor, sizeof(terminal_screen.cursor));
             break;
@@ -593,6 +626,17 @@ void clear_csi_sequence(void) {
 void clear_buffer(uint8_t *buffer, int *length) {
     for (int i = 0; i < *length; i++) buffer[i] = 0;
     *length = 0;
+}
+
+void terminal_screen_use_alternate(bool enabled) {
+    if (enabled) {
+        active_terminal_screen = &alternate_terminal_screen;
+        terminal_screen_clear();
+    } else {
+        active_terminal_screen = &main_terminal_screen;
+    }
+
+    terminal_screen_clamp_cursor();
 }
 
 void terminal_screen_clear(void) {
@@ -789,8 +833,24 @@ TerminalScreenSnapshot get_terminal_screen_snapshot(void) {
 }
 
 
-//TODO
 void parse_osc(uint8_t c) {
+    if (osc_escape_pending) {
+        if (c == '\\') {
+            terminal_state = GROUND_STATE;
+        }
+
+        osc_escape_pending = false;
+        return;
+    }
+
+    if (c == 0x07) {
+        terminal_state = GROUND_STATE;
+        return;
+    }
+
+    if (c == ESC_ASCII) {
+        osc_escape_pending = true;
+    }
 }
 
 

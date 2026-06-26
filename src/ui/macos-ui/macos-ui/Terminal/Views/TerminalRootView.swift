@@ -18,7 +18,6 @@ struct TerminalRootView: View {
             cursorRow: session.cursorRow,
             cursorColumn: session.cursorColumn
         )
-            .background(Color(red: 0.06, green: 0.065, blue: 0.07))
             .frame(
                 minWidth: DefaultSettings.minimumWindowWidth,
                 maxWidth: .infinity,
@@ -76,23 +75,7 @@ private struct TerminalCellGrid: View {
             let cols = max(size.cols, 1)
             let cellWidth = canvasSize.width / CGFloat(cols)
             let cellHeight = canvasSize.height / CGFloat(rows)
-
-            var grid = Path()
-
-            for col in 0...cols {
-                let x = CGFloat(col) * cellWidth
-                grid.move(to: CGPoint(x: x, y: 0))
-                grid.addLine(to: CGPoint(x: x, y: canvasSize.height))
-            }
-
-            for row in 0...rows {
-                let y = CGFloat(row) * cellHeight
-                grid.move(to: CGPoint(x: 0, y: y))
-                grid.addLine(to: CGPoint(x: canvasSize.width, y: y))
-            }
-
-            context.stroke(grid, with: .color(.white.opacity(0.18)), lineWidth: 0.5)
-
+            
             if cursorRow >= 0, cursorRow < rows, cursorColumn >= 0, cursorColumn < cols {
                 let cursorRect = CGRect(
                     x: CGFloat(cursorColumn) * cellWidth,
@@ -113,7 +96,6 @@ private struct TerminalCellGrid: View {
 
                     var text = Text(cell.character)
                         .font(.custom(DefaultSettings.fontName, size: DefaultSettings.fontSize))
-                        .foregroundStyle(Self.color(for: cell.color))
 
                     if cell.isBold {
                         text = text.fontWeight(.bold)
@@ -129,20 +111,6 @@ private struct TerminalCellGrid: View {
                     )
                 }
             }
-        }
-    }
-
-    private static func color(for ansiColor: UInt8) -> Color {
-        switch ansiColor {
-            case 1: return Color(red: 0.12, green: 0.12, blue: 0.12)
-            case 2: return Color(red: 0.80, green: 0.20, blue: 0.20)
-            case 3: return Color(red: 0.25, green: 0.75, blue: 0.35)
-            case 4: return Color(red: 0.85, green: 0.70, blue: 0.25)
-            case 5: return Color(red: 0.35, green: 0.55, blue: 0.95)
-            case 6: return Color(red: 0.75, green: 0.40, blue: 0.85)
-            case 7: return Color(red: 0.35, green: 0.80, blue: 0.85)
-            case 8: return Color(red: 0.88, green: 0.88, blue: 0.84)
-            default: return Color(red: 0.88, green: 0.88, blue: 0.84)
         }
     }
 }
