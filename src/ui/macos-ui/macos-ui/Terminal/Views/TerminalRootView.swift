@@ -28,7 +28,7 @@ struct TerminalRootView: View {
                 updateTerminalSize(from: size)
             }
             .overlay {
-                TerminalKeyboardInputView { input in
+                TerminalKeyboardInputView(applicationCursorKeys: session.applicationCursorKeys) { input in
                     session.send_input_string(input: input)
                 }
             }
@@ -96,6 +96,7 @@ private struct TerminalCellGrid: View {
 
                     var text = Text(cell.character)
                         .font(.custom(DefaultSettings.fontName, size: DefaultSettings.fontSize))
+                        .foregroundStyle(Self.foregroundColor(for: cell.color))
 
                     if cell.isBold {
                         text = text.fontWeight(.bold)
@@ -112,5 +113,73 @@ private struct TerminalCellGrid: View {
                 }
             }
         }
+    }
+
+    private static let trueColorFlag: Int32 = 0x01000000
+    private static let ansiColors: [Color] = [
+        rgb(red: 0, green: 0, blue: 0),
+        rgb(red: 255, green: 123, blue: 114),
+        rgb(red: 86, green: 211, blue: 100),
+        rgb(red: 128, green: 128, blue: 0),
+        rgb(red: 0, green: 0, blue: 128),
+        rgb(red: 128, green: 0, blue: 128),
+        rgb(red: 0, green: 128, blue: 128),
+        rgb(red: 192, green: 192, blue: 192),
+        rgb(red: 128, green: 128, blue: 128),
+        rgb(red: 255, green: 154, blue: 148),
+        rgb(red: 125, green: 241, blue: 139),
+        rgb(red: 255, green: 255, blue: 0),
+        rgb(red: 0, green: 0, blue: 255),
+        rgb(red: 255, green: 0, blue: 255),
+        rgb(red: 0, green: 255, blue: 255),
+        rgb(red: 255, green: 255, blue: 255)
+    ]
+
+    private static func foregroundColor(for colorValue: Int32) -> Color {
+        if colorValue < 0 {
+            return rgb(red: 220, green: 220, blue: 216)
+        }
+
+        if (colorValue & trueColorFlag) == trueColorFlag {
+            let rgbValue = colorValue & 0x00FF_FFFF
+            return rgb(
+                red: Int((rgbValue >> 16) & 0xFF),
+                green: Int((rgbValue >> 8) & 0xFF),
+                blue: Int(rgbValue & 0xFF)
+            )
+        }
+
+        return xtermColor(index: Int(colorValue))
+    }
+
+    private static func xtermColor(index: Int) -> Color {
+        let clampedIndex = min(max(index, 0), 255)
+
+        if clampedIndex < ansiColors.count {
+            return ansiColors[clampedIndex]
+        }
+
+        if clampedIndex <= 231 {
+            let colorCubeIndex = clampedIndex - 16
+            let levels = [0, 95, 135, 175, 215, 255]
+            return rgb(
+                red: levels[colorCubeIndex / 36],
+                green: levels[(colorCubeIndex / 6) % 6],
+                blue: levels[colorCubeIndex % 6]
+            )
+        }
+
+        let grayLevel = 8 + (clampedIndex - 232) * 10
+        return rgb(red: grayLevel, green: grayLevel, blue: grayLevel)
+    }
+
+    private static func rgb(red: Int, green: Int, blue: Int) -> Color {
+        Color(
+            .sRGB,
+            red: Double(red) / 255.0,
+            green: Double(green) / 255.0,
+            blue: Double(blue) / 255.0,
+            opacity: 1
+        )
     }
 }

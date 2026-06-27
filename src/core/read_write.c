@@ -16,6 +16,8 @@
 #define CSI_INTERMEDIATE_BUFFER_SIZE 8
 #define CSI_MAX_PARAMS 16
 #define OSC_BUFFER_SIZE 1024
+#define TERMINAL_DEFAULT_COLOR -1
+#define TERMINAL_TRUECOLOR_FLAG 0x01000000
 
 
 typedef enum {
@@ -83,7 +85,7 @@ typedef struct {
 
 typedef struct {
     bool is_bold;
-    uint8_t color;
+    int32_t color;
 } cell_properties;
 
 typedef struct {
@@ -93,6 +95,8 @@ typedef struct {
 
     int cursor[2]; // [0] row and [1] col
     int saved_cursor[2];
+    int scroll_top;
+    int scroll_bottom;
     cell_properties current_properties;
 } TerminalScreen;
 
@@ -123,10 +127,11 @@ struct csi_sequence {
 static TerminalState terminal_state = GROUND_STATE;
 static struct csi_sequence csi_sequence;
 static struct csi_sequence *csi_sequence_ptr = &csi_sequence;
-static TerminalScreen main_terminal_screen;
-static TerminalScreen alternate_terminal_screen;
+static TerminalScreen main_terminal_screen = {.current_properties = {.color = TERMINAL_DEFAULT_COLOR}};
+static TerminalScreen alternate_terminal_screen = {.current_properties = {.color = TERMINAL_DEFAULT_COLOR}};
 static TerminalScreen *active_terminal_screen = &main_terminal_screen;
 static bool osc_escape_pending = false;
+static bool application_cursor_keys = false;
 #define terminal_screen (*active_terminal_screen)
 
 ssize_t write_bytes(char *bytes, int master_file_descriptor, size_t n_bytes);
@@ -146,14 +151,19 @@ int ascii_digit_to_int(uint8_t byte);
 int get_csi_parameter_by_index(const CsiCommand *command, size_t index, int default_value);
 int add_clamped_to_int(int value, int amount);
 int subtract_clamped_to_zero(int value, int amount);
+bool is_sgr_color_component(int value);
+int32_t make_sgr_truecolor(int red, int green, int blue);
 int resize_single_terminal_screen(TerminalScreen *screen, int rows, int columns);
 void terminal_screen_use_alternate(bool enabled);
 void terminal_screen_clear(void);
 void terminal_screen_clear_cell(TerminalScreenCell *cell);
 void terminal_screen_clear_row(int row);
 void terminal_screen_clamp_cursor(void);
+void terminal_screen_reset_scroll_region(void);
+void terminal_screen_set_scroll_region(const CsiCommand *command);
 void terminal_screen_new_line(void);
 void terminal_screen_scroll_up_one_line(void);
+void terminal_screen_scroll_region_up_one_line(int top, int bottom);
 void terminal_screen_put_byte(uint8_t byte);
 void terminal_screen_apply_sgr(const CsiCommand *command);
 void terminal_screen_erase_line(int mode);
@@ -223,6 +233,8 @@ int resize_single_terminal_screen(TerminalScreen *screen, int rows, int columns)
     screen->cells = new_cells;
     screen->rows = rows;
     screen->columns = columns;
+    screen->scroll_top = 0;
+    screen->scroll_bottom = rows - 1;
     if (screen->cursor[0] >= rows) screen->cursor[0] = rows - 1;
     if (screen->cursor[1] >= columns) screen->cursor[1] = columns - 1;
     if (screen->cursor[0] < 0) screen->cursor[0] = 0;
@@ -245,6 +257,7 @@ void read_loop(int master_file_descriptor, void (*on_output)(const TerminalScree
     terminal_logger *logger = terminal_logger_find(master_file_descriptor);
     clear_csi_sequence();
     terminal_state = GROUND_STATE;
+    application_cursor_keys = false;
 
     struct pollfd poll_file_descriptor = {
         .fd = master_file_descriptor,
@@ -529,6 +542,14 @@ int subtract_clamped_to_zero(int value, int amount) {
     return value - amount;
 }
 
+bool is_sgr_color_component(int value) {
+    return value >= 0 && value <= 255;
+}
+
+int32_t make_sgr_truecolor(int red, int green, int blue) {
+    return TERMINAL_TRUECOLOR_FLAG | (red << 16) | (green << 8) | blue;
+}
+
 
 void execute_csi_command(const CsiCommand *command) {
     int amount = get_csi_parameter_by_index(command, 0, 1); // getting the first parameter value and defaulting it to 1 if not available
@@ -586,14 +607,27 @@ void execute_csi_command(const CsiCommand *command) {
         case CSI_ACTION_SGR:
             terminal_screen_apply_sgr(command);
             break;
+        case CSI_ACTION_SET_SCROLL_REGION:
+            terminal_screen_set_scroll_region(command);
+            break;
         case CSI_ACTION_SET_MODE:
-            if (command->private_marker == '?' && get_csi_parameter_by_index(command, 0, 0) == 1049) {
-                terminal_screen_use_alternate(true);
+            if (command->private_marker == '?') {
+                int mode = get_csi_parameter_by_index(command, 0, 0);
+                if (mode == 1) {
+                    application_cursor_keys = true;
+                } else if (mode == 1049) {
+                    terminal_screen_use_alternate(true);
+                }
             }
             break;
         case CSI_ACTION_RESET_MODE:
-            if (command->private_marker == '?' && get_csi_parameter_by_index(command, 0, 0) == 1049) {
-                terminal_screen_use_alternate(false);
+            if (command->private_marker == '?') {
+                int mode = get_csi_parameter_by_index(command, 0, 0);
+                if (mode == 1) {
+                    application_cursor_keys = false;
+                } else if (mode == 1049) {
+                    terminal_screen_use_alternate(false);
+                }
             }
             break;
         case CSI_ACTION_SAVE_CURSOR:
@@ -631,6 +665,7 @@ void clear_buffer(uint8_t *buffer, int *length) {
 void terminal_screen_use_alternate(bool enabled) {
     if (enabled) {
         active_terminal_screen = &alternate_terminal_screen;
+        terminal_screen_reset_scroll_region();
         terminal_screen_clear();
     } else {
         active_terminal_screen = &main_terminal_screen;
@@ -657,8 +692,7 @@ void terminal_screen_clear_cell(TerminalScreenCell *cell) {
     cell->codepoint = ' ';
     cell->is_empty = 1;
     cell->is_bold = 0;
-    cell->color = 0;
-    cell->reserved = 0;
+    cell->color = TERMINAL_DEFAULT_COLOR;
 }
 
 void terminal_screen_clear_row(int row) {
@@ -684,32 +718,70 @@ void terminal_screen_clamp_cursor(void) {
     if (terminal_screen.cursor[1] >= terminal_screen.columns) terminal_screen.cursor[1] = terminal_screen.columns - 1;
 }
 
+void terminal_screen_reset_scroll_region(void) {
+    terminal_screen.scroll_top = 0;
+    terminal_screen.scroll_bottom = terminal_screen.rows > 0 ? terminal_screen.rows - 1 : 0;
+}
+
+void terminal_screen_set_scroll_region(const CsiCommand *command) {
+    if (terminal_screen.rows <= 0) {
+        return;
+    }
+
+    int top = get_csi_parameter_by_index(command, 0, 1) - 1;
+    int bottom = get_csi_parameter_by_index(command, 1, terminal_screen.rows) - 1;
+
+    if (top < 0) top = 0;
+    if (bottom >= terminal_screen.rows) bottom = terminal_screen.rows - 1;
+
+    if (top >= bottom) {
+        return;
+    }
+
+    terminal_screen.scroll_top = top;
+    terminal_screen.scroll_bottom = bottom;
+    terminal_screen.cursor[0] = 0;
+    terminal_screen.cursor[1] = 0;
+}
+
 void terminal_screen_new_line(void) {
     if (terminal_screen.cells == NULL) {
         return;
     }
 
-    terminal_screen.cursor[0]++;
-    if (terminal_screen.cursor[0] >= terminal_screen.rows) {
+    if (terminal_screen.cursor[0] == terminal_screen.scroll_bottom) {
         terminal_screen_scroll_up_one_line();
-        terminal_screen.cursor[0] = terminal_screen.rows - 1;
+    } else if (terminal_screen.cursor[0] < terminal_screen.rows - 1) {
+        terminal_screen.cursor[0]++;
+    } else {
+        terminal_screen_scroll_region_up_one_line(0, terminal_screen.rows - 1);
     }
 }
 
 void terminal_screen_scroll_up_one_line(void) {
+    terminal_screen_scroll_region_up_one_line(terminal_screen.scroll_top, terminal_screen.scroll_bottom);
+}
+
+void terminal_screen_scroll_region_up_one_line(int top, int bottom) {
     if (terminal_screen.cells == NULL || terminal_screen.rows <= 0 || terminal_screen.columns <= 0) {
         return;
     }
 
-    if (terminal_screen.rows > 1) {
+    if (top < 0) top = 0;
+    if (bottom >= terminal_screen.rows) bottom = terminal_screen.rows - 1;
+    if (top >= bottom) {
+        return;
+    }
+
+    if (bottom > top) {
         memmove(
-            terminal_screen.cells,
-            &terminal_screen.cells[terminal_screen.columns],
-            (size_t)(terminal_screen.rows - 1) * (size_t)terminal_screen.columns * sizeof(TerminalScreenCell)
+            &terminal_screen.cells[top * terminal_screen.columns],
+            &terminal_screen.cells[(top + 1) * terminal_screen.columns],
+            (size_t)(bottom - top) * (size_t)terminal_screen.columns * sizeof(TerminalScreenCell)
         );
     }
 
-    terminal_screen_clear_row(terminal_screen.rows - 1);
+    terminal_screen_clear_row(bottom);
 }
 
 void terminal_screen_put_byte(uint8_t byte) {
@@ -726,7 +798,6 @@ void terminal_screen_put_byte(uint8_t byte) {
     cell->is_empty = 0;
     cell->is_bold = terminal_screen.current_properties.is_bold ? 1 : 0;
     cell->color = terminal_screen.current_properties.color;
-    cell->reserved = 0;
 
     terminal_screen.cursor[1]++;
     if (terminal_screen.cursor[1] >= terminal_screen.columns) {
@@ -738,7 +809,7 @@ void terminal_screen_put_byte(uint8_t byte) {
 void terminal_screen_apply_sgr(const CsiCommand *command) {
     if (command->params_count == 0) {
         terminal_screen.current_properties.is_bold = false;
-        terminal_screen.current_properties.color = 0;
+        terminal_screen.current_properties.color = TERMINAL_DEFAULT_COLOR;
         return;
     }
 
@@ -747,15 +818,35 @@ void terminal_screen_apply_sgr(const CsiCommand *command) {
 
         if (parameter == 0) {
             terminal_screen.current_properties.is_bold = false;
-            terminal_screen.current_properties.color = 0;
+            terminal_screen.current_properties.color = TERMINAL_DEFAULT_COLOR;
         } else if (parameter == 1) {
             terminal_screen.current_properties.is_bold = true;
         } else if (parameter == 22) {
             terminal_screen.current_properties.is_bold = false;
         } else if (parameter >= 30 && parameter <= 37) {
-            terminal_screen.current_properties.color = (uint8_t)(parameter - 30 + 1);
+            terminal_screen.current_properties.color = parameter - 30;
+        } else if (parameter >= 90 && parameter <= 97) {
+            terminal_screen.current_properties.color = parameter - 90 + 8;
         } else if (parameter == 39) {
-            terminal_screen.current_properties.color = 0;
+            terminal_screen.current_properties.color = TERMINAL_DEFAULT_COLOR;
+        } else if (parameter == 38 && index + 2 < command->params_count &&
+                   command->params[index + 1] == 5) {
+            int color = command->params[index + 2];
+            if (is_sgr_color_component(color)) {
+                terminal_screen.current_properties.color = color;
+            }
+            index += 2;
+        } else if (parameter == 38 && index + 4 < command->params_count &&
+                   command->params[index + 1] == 2) {
+            int red = command->params[index + 2];
+            int green = command->params[index + 3];
+            int blue = command->params[index + 4];
+            if (is_sgr_color_component(red) &&
+                is_sgr_color_component(green) &&
+                is_sgr_color_component(blue)) {
+                terminal_screen.current_properties.color = make_sgr_truecolor(red, green, blue);
+            }
+            index += 4;
         }
     }
 }
@@ -822,6 +913,7 @@ TerminalScreenSnapshot terminal_screen_snapshot(void) {
         .columns = terminal_screen.columns,
         .cursor_row = terminal_screen.cursor[0],
         .cursor_column = terminal_screen.cursor[1],
+        .application_cursor_keys = application_cursor_keys ? 1 : 0,
         .cells = terminal_screen.cells
     };
 

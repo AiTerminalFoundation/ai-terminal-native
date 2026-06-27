@@ -13,6 +13,7 @@ final class TerminalSession: ObservableObject {
     @Published private(set) var screenColumns: Int = 0
     @Published private(set) var cursorRow: Int = 0
     @Published private(set) var cursorColumn: Int = 0
+    @Published private(set) var applicationCursorKeys = false
     private var isRunning = false
     private var isClosed = false
     
@@ -22,6 +23,7 @@ final class TerminalSession: ObservableObject {
         let columns: Int
         let cursorRow: Int
         let cursorColumn: Int
+        let applicationCursorKeys: Bool
     }
 
     private static let outputCallback: @convention(c) (UnsafePointer<TerminalScreenSnapshot>?, UnsafeMutableRawPointer?) -> Void = { snapshot, context in
@@ -176,7 +178,8 @@ final class TerminalSession: ObservableObject {
             rows: rows,
             columns: columns,
             cursorRow: Int(snapshot.cursor_row),
-            cursorColumn: Int(snapshot.cursor_column)
+            cursorColumn: Int(snapshot.cursor_column),
+            applicationCursorKeys: snapshot.application_cursor_keys != 0
         )
     }
 
@@ -186,6 +189,7 @@ final class TerminalSession: ObservableObject {
         screenColumns = update.columns
         cursorRow = update.cursorRow
         cursorColumn = update.cursorColumn
+        applicationCursorKeys = update.applicationCursorKeys
     }
 
     private func failStartup() {

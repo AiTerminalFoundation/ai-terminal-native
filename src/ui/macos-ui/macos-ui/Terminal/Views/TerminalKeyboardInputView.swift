@@ -2,10 +2,12 @@ import AppKit
 import SwiftUI
 
 struct TerminalKeyboardInputView: NSViewRepresentable {
+    let applicationCursorKeys: Bool
     let onInput: (String) -> Void
 
     func makeNSView(context: Context) -> KeyboardView {
         let view = KeyboardView()
+        view.applicationCursorKeys = applicationCursorKeys
         view.onInput = onInput
 
         DispatchQueue.main.async {
@@ -16,6 +18,7 @@ struct TerminalKeyboardInputView: NSViewRepresentable {
     }
 
     func updateNSView(_ nsView: KeyboardView, context: Context) {
+        nsView.applicationCursorKeys = applicationCursorKeys
         nsView.onInput = onInput
 
         DispatchQueue.main.async {
@@ -25,6 +28,7 @@ struct TerminalKeyboardInputView: NSViewRepresentable {
 }
 
 final class KeyboardView: NSView {
+    var applicationCursorKeys = false
     var onInput: ((String) -> Void)?
 
     override var acceptsFirstResponder: Bool {
@@ -34,16 +38,20 @@ final class KeyboardView: NSView {
     override func keyDown(with event: NSEvent) {
         switch event.specialKey {
             case .upArrow:
-                onInput?("\u{1b}[A")
+                onInput?(arrowSequence(normal: "A"))
             case .downArrow:
-                onInput?("\u{1b}[B")
+                onInput?(arrowSequence(normal: "B"))
             case .rightArrow:
-                onInput?("\u{1b}[C")
+                onInput?(arrowSequence(normal: "C"))
             case .leftArrow:
-                onInput?("\u{1b}[D")
+                onInput?(arrowSequence(normal: "D"))
             default:
                 handleTextInput(event)
         }
+    }
+
+    private func arrowSequence(normal finalByte: Character) -> String {
+        applicationCursorKeys ? "\u{1b}O\(finalByte)" : "\u{1b}[\(finalByte)"
     }
 
     private func handleTextInput(_ event: NSEvent) {

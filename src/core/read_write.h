@@ -8,8 +8,7 @@ typedef struct {
     uint32_t codepoint;
     uint8_t is_empty;
     uint8_t is_bold;
-    uint8_t color;
-    uint8_t reserved;
+    int32_t color;
 } TerminalScreenCell;
 
 typedef struct {
@@ -17,6 +16,7 @@ typedef struct {
     int columns;
     int cursor_row;
     int cursor_column;
+    int application_cursor_keys;
     const TerminalScreenCell *cells;
 } TerminalScreenSnapshot;
 
