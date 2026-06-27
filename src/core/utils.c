@@ -14,10 +14,10 @@ char * generate_string_uuid_v7(void);
 /* unsafe and unpredictable as some things are left to the compiler (padding, low-high disposition of the bits)
 struct {
     uint64_t unix_timestamp_ms : 48;
-    uint64_t version: 4; 
+    uint64_t version: 4;
     uint64_t microseconds_fraction: 12;
     uint64_t variant: 2;
-    uint64_t random_bits: 62; 
+    uint64_t random_bits: 62;
 } uuid_v7;
 */
 
@@ -42,7 +42,7 @@ uuid_v7 generate_uuid_v7(void) {
 
     uint64_t version_masked_4_bits = 7 & 0xF; // the uuid version
     uint64_t variant_masked_2_bits = 2 & 0b11; // variant is 2 bits and in our case is 2, that corresponds to RFC 4122. It's a standard for all uuids
-    
+
     // 62 random bits
     uint64_t random_value_masked_62_bits = generate_random_value_64_bits() & 0x3FFFFFFFFFFFFFFF;
 
@@ -55,17 +55,17 @@ uuid_v7 generate_uuid_v7(void) {
 
 char * generate_string_uuid_v7(void) {
     char *uuid_str = malloc(37); // 32 bytes for the values, 4 dashes, 1 null terminator
-                            
+
     uuid_v7 uuid_v7 = generate_uuid_v7();
 
-    uint32_t ts_first_part = (uint32_t)(uuid_v7.upper >> 32);
-    uint16_t ts_second_part = (uint16_t)((uuid_v7.upper >> 16) & 0xFFFF);
-    uint16_t ver_and_micros = (uint16_t)(uuid_v7.upper & 0xFFFF);
-    uint16_t variant_and_rand = (uint16_t)(uuid_v7.lower >> 48);
+    uint32_t timestamp_first_part = (uint32_t)(uuid_v7.upper >> 32);
+    uint16_t timestamp_second_part = (uint16_t)((uuid_v7.upper >> 16) & 0xFFFF);
+    uint16_t version_and_microseconds = (uint16_t)(uuid_v7.upper & 0xFFFF);
+    uint16_t variant_and_random_part = (uint16_t)(uuid_v7.lower >> 48);
     uint64_t rand = uuid_v7.lower & 0xFFFFFFFFFFFF;
 
     // writing formatted string
-    snprintf(uuid_str, 37, "%08x-%04x-%04x-%04x-%012llx", ts_first_part, ts_second_part, ver_and_micros, variant_and_rand, rand);
+    snprintf(uuid_str, 37, "%08x-%04x-%04x-%04x-%012llx", timestamp_first_part, timestamp_second_part, version_and_microseconds, variant_and_random_part, rand);
     return uuid_str;
 }
 
