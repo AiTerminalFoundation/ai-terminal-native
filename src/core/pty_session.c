@@ -16,7 +16,10 @@
 #include <sys/ioctl.h>
 #include <unistd.h>
 
+
 #define BUFFER_SIZE 4096
+
+
 int create_pseudoterminal(int *master_file_descriptor, int *slave_file_descriptor, char **session_id);
 int fork_and_exec_shell(int master_file_descriptor, int slave_file_descriptor);
 const char * get_default_shell(void);
@@ -27,7 +30,7 @@ void close_terminal_session(int master_file_descriptor);
 /*
  * Create a new pseudoterminal session, this function is just a wrapper of the openpty() function
  * the openpty() function returns the file descriptors of the master and slave pseudoterminals
- * this function just exposes these to the UI Layer 
+ * this function just exposes these to the UI Layer
  * We will use the pseudoterminal_session_id to create a file that will contains the logs of each terminal session
  */
 int create_pseudoterminal(int *master_file_descriptor, int *slave_file_descriptor, char **session_id) {

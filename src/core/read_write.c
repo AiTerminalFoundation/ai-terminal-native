@@ -10,7 +10,6 @@
 #include <string.h>
 
 
-
 #define BUFFER_SIZE 4096
 #define CSI_BUFFER_SIZE 128
 #define CSI_INTERMEDIATE_BUFFER_SIZE 8
@@ -18,6 +17,7 @@
 #define OSC_BUFFER_SIZE 1024
 #define TERMINAL_DEFAULT_COLOR -1
 #define TERMINAL_TRUECOLOR_FLAG 0x01000000
+#define UTF8_REPLACEMENT_CODEPOINT 0xFFFD
 
 
 typedef enum {
@@ -123,10 +123,17 @@ struct csi_sequence {
     uint8_t final_byte;
 };
 
+typedef struct {
+    uint32_t codepoint;
+    uint32_t min_codepoint;
+    int remaining_bytes;
+} Utf8Decoder;
+
 
 static TerminalState terminal_state = GROUND_STATE;
 static struct csi_sequence csi_sequence;
 static struct csi_sequence *csi_sequence_ptr = &csi_sequence;
+static Utf8Decoder utf8_decoder;
 static TerminalScreen main_terminal_screen = {.current_properties = {.color = TERMINAL_DEFAULT_COLOR}};
 static TerminalScreen alternate_terminal_screen = {.current_properties = {.color = TERMINAL_DEFAULT_COLOR}};
 static TerminalScreen *active_terminal_screen = &main_terminal_screen;
@@ -142,6 +149,9 @@ int parse_csi(uint8_t c);
 void parse(int master_fd, uint8_t c);
 void clear_buffer(uint8_t *buffer, int *length);
 void parse_osc(uint8_t c);
+void clear_utf8_decoder(void);
+bool is_utf8_continuation_byte(uint8_t byte);
+void parse_utf8_byte(uint8_t byte);
 char to_utf8(uint8_t bytes[]);
 void to_screen_cell(TerminalActionType *terminalActionType);
 CsiCommand evaluate_csi_sequence(const struct csi_sequence *sequence);
@@ -165,6 +175,7 @@ void terminal_screen_new_line(void);
 void terminal_screen_scroll_up_one_line(void);
 void terminal_screen_scroll_region_up_one_line(int top, int bottom);
 void terminal_screen_put_byte(uint8_t byte);
+void terminal_screen_put_codepoint(uint32_t codepoint);
 void terminal_screen_apply_sgr(const CsiCommand *command);
 void terminal_screen_erase_line(int mode);
 void terminal_screen_erase_display(int mode);
@@ -256,6 +267,7 @@ void read_loop(int master_file_descriptor, void (*on_output)(const TerminalScree
 
     terminal_logger *logger = terminal_logger_find(master_file_descriptor);
     clear_csi_sequence();
+    clear_utf8_decoder();
     terminal_state = GROUND_STATE;
     application_cursor_keys = false;
 
@@ -307,22 +319,28 @@ void parse(int master_fd, uint8_t c) {
     switch(terminal_state) {
         case GROUND_STATE:
             if(c == ESC_ASCII) {
+                clear_utf8_decoder();
                 terminal_state = ESCAPE_STATE;
             } else if (c == '\r') {
+                clear_utf8_decoder();
                 terminal_screen.cursor[1] = 0;
             } else if (c == '\n') {
+                clear_utf8_decoder();
                 terminal_screen_new_line();
             } else if (c == '\b' || c == 0x7f) {
+                clear_utf8_decoder();
                 terminal_screen.cursor[1] = subtract_clamped_to_zero(terminal_screen.cursor[1], 1);
             } else if (c == '\t') {
+                clear_utf8_decoder();
                 int spaces = 8 - (terminal_screen.cursor[1] % 8);
                 for (int i = 0; i < spaces; i++) {
                     terminal_screen_put_byte(' ');
                 }
             } else if (c >= 0x20) {
-                terminal_screen_put_byte(c);
+                parse_utf8_byte(c);
             } else {
                 /* Other C0 controls are ignored for the first rendering pass. */
+                clear_utf8_decoder();
             }
             break;
         case ESCAPE_STATE:
@@ -662,6 +680,64 @@ void clear_buffer(uint8_t *buffer, int *length) {
     *length = 0;
 }
 
+void clear_utf8_decoder(void) {
+    utf8_decoder.codepoint = 0;
+    utf8_decoder.min_codepoint = 0;
+    utf8_decoder.remaining_bytes = 0;
+}
+
+bool is_utf8_continuation_byte(uint8_t byte) {
+    return byte >= 0x80 && byte <= 0xBF;
+}
+
+void parse_utf8_byte(uint8_t byte) {
+    if (utf8_decoder.remaining_bytes == 0) {
+        if (byte <= 0x7F) {
+            terminal_screen_put_codepoint(byte);
+        } else if (byte >= 0xC2 && byte <= 0xDF) {
+            utf8_decoder.codepoint = byte & 0x1F;
+            utf8_decoder.min_codepoint = 0x80;
+            utf8_decoder.remaining_bytes = 1;
+        } else if (byte >= 0xE0 && byte <= 0xEF) {
+            utf8_decoder.codepoint = byte & 0x0F;
+            utf8_decoder.min_codepoint = 0x800;
+            utf8_decoder.remaining_bytes = 2;
+        } else if (byte >= 0xF0 && byte <= 0xF4) {
+            utf8_decoder.codepoint = byte & 0x07;
+            utf8_decoder.min_codepoint = 0x10000;
+            utf8_decoder.remaining_bytes = 3;
+        } else {
+            terminal_screen_put_codepoint(UTF8_REPLACEMENT_CODEPOINT);
+        }
+        return;
+    }
+
+    if (!is_utf8_continuation_byte(byte)) {
+        terminal_screen_put_codepoint(UTF8_REPLACEMENT_CODEPOINT);
+        clear_utf8_decoder();
+        parse_utf8_byte(byte);
+        return;
+    }
+
+    utf8_decoder.codepoint = (utf8_decoder.codepoint << 6) | (byte & 0x3F);
+    utf8_decoder.remaining_bytes--;
+
+    if (utf8_decoder.remaining_bytes == 0) {
+        uint32_t codepoint = utf8_decoder.codepoint;
+        uint32_t min_codepoint = utf8_decoder.min_codepoint;
+        clear_utf8_decoder();
+
+        if (codepoint < min_codepoint ||
+            codepoint > 0x10FFFF ||
+            (codepoint >= 0xD800 && codepoint <= 0xDFFF)) {
+            terminal_screen_put_codepoint(UTF8_REPLACEMENT_CODEPOINT);
+            return;
+        }
+
+        terminal_screen_put_codepoint(codepoint);
+    }
+}
+
 void terminal_screen_use_alternate(bool enabled) {
     if (enabled) {
         active_terminal_screen = &alternate_terminal_screen;
@@ -785,6 +861,10 @@ void terminal_screen_scroll_region_up_one_line(int top, int bottom) {
 }
 
 void terminal_screen_put_byte(uint8_t byte) {
+    terminal_screen_put_codepoint(byte);
+}
+
+void terminal_screen_put_codepoint(uint32_t codepoint) {
     if (terminal_screen.cells == NULL || terminal_screen.rows <= 0 || terminal_screen.columns <= 0) {
         return;
     }
@@ -794,7 +874,7 @@ void terminal_screen_put_byte(uint8_t byte) {
     int row = terminal_screen.cursor[0];
     int column = terminal_screen.cursor[1];
     TerminalScreenCell *cell = &terminal_screen.cells[row * terminal_screen.columns + column];
-    cell->codepoint = byte;
+    cell->codepoint = codepoint;
     cell->is_empty = 0;
     cell->is_bold = terminal_screen.current_properties.is_bold ? 1 : 0;
     cell->color = terminal_screen.current_properties.color;
@@ -943,15 +1023,4 @@ void parse_osc(uint8_t c) {
     if (c == ESC_ASCII) {
         osc_escape_pending = true;
     }
-}
-
-
-//TODO
-char to_utf8(uint8_t bytes[]) {
-    return 0;
-}
-
-
-//TODO
-void to_screen_cell(TerminalActionType *terminalActionType) {
 }
